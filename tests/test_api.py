@@ -3,9 +3,27 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas import AnalyzeResponse
 
 
 client = TestClient(app)
+
+
+def test_analyze_response_accepts_skipped_trace() -> None:
+    """execute_plan_node emits skipped when there is no plan; API must still serialize."""
+    resp = AnalyzeResponse(
+        analysis="Planner failed; no execution.",
+        trace=[
+            {
+                "step": "execute_plan_node",
+                "status": "skipped",
+                "details": {"reason": "no compiled plan"},
+            }
+        ],
+        executed_steps=[],
+        errors=[],
+    )
+    assert resp.trace[0].status == "skipped"
 
 
 def test_health_endpoint() -> None:
@@ -25,11 +43,8 @@ def test_sample_questions_endpoint() -> None:
 def test_analyze_endpoint_structure() -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
-            "summary": "Pipeline velocity improved from 69.77 to 66.14 days week over week.",
-            "root_cause": "Enterprise remains the slowest segment and Stage 2 remains the main bottleneck.",
-            "recommendation": "Focus managers on Enterprise Stage 2 opportunities first.",
-            "evidence": [{"label": "current_velocity", "value": 66.14}],
-            "trace": [{"step": "planner_node", "status": "completed", "details": {"action": "finish"}}],
+            "analysis": "## Summary\nPipeline velocity improved.\n",
+            "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
             "executed_steps": [
                 {
                     "id": "step_1",
@@ -50,7 +65,6 @@ def test_analyze_endpoint_structure() -> None:
                     "error": None,
                 }
             ],
-            "verified": True,
             "errors": [],
         }
 
@@ -63,7 +77,7 @@ def test_analyze_endpoint_structure() -> None:
     routes.run_analysis = original
     assert response.status_code == 200
     payload = response.json()
-    assert {"summary", "root_cause", "recommendation", "evidence", "trace", "executed_steps", "verified", "errors"} <= payload.keys()
+    assert {"analysis", "trace", "executed_steps", "errors"} <= payload.keys()
     assert isinstance(payload["trace"], list)
-    assert isinstance(payload["evidence"], list)
     assert isinstance(payload["executed_steps"], list)
+    assert isinstance(payload["analysis"], str)

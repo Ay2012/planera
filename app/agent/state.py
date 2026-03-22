@@ -1,4 +1,4 @@
-"""Typed workflow state for the Gemini-driven LangGraph loop."""
+"""Typed workflow state for the compiled-plan analytics workflow."""
 
 from __future__ import annotations
 
@@ -15,22 +15,14 @@ class AnalysisState(TypedDict):
     intent: str
     metric: str
     planner_reasoning: str
-    current_step: dict[str, Any] | None
-    planner_action: str
+    compiled_plan: dict[str, Any] | None
+    repair_attempted: bool
     artifacts: dict[str, Any]
     executed_steps: list[dict[str, Any]]
-    evidence: list[dict[str, Any]]
-    verification: dict[str, Any]
-    verified: bool
-    retry_count: int
-    max_retries: int
+    analysis: str
     total_steps: int
-    max_steps: int
     last_error: dict[str, Any] | None
-    loop_status: str
-    summary: str
-    root_cause: str
-    recommendation: str
+    workflow_status: str
     trace: list[dict[str, Any]]
     errors: list[dict[str, Any]]
 
@@ -41,25 +33,17 @@ def create_initial_state(query: str) -> AnalysisState:
     return AnalysisState(
         query=query,
         dataset_context={},
-        intent="diagnosis",
-        metric="pipeline_velocity",
+        intent="",
+        metric="",
         planner_reasoning="",
-        current_step=None,
-        planner_action="execute_step",
+        compiled_plan=None,
+        repair_attempted=False,
         artifacts={},
         executed_steps=[],
-        evidence=[],
-        verification={},
-        verified=False,
-        retry_count=0,
-        max_retries=2,
+        analysis="",
         total_steps=0,
-        max_steps=5,
         last_error=None,
-        loop_status="planning",
-        summary="",
-        root_cause="",
-        recommendation="",
+        workflow_status="planning",
         trace=[],
         errors=[],
     )

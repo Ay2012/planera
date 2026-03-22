@@ -1,6 +1,8 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 langgraph==0.6.5
+# Pin below 2 so optional deps (numexpr/bottleneck) match wheels; avoids NumPy 1.x C-API errors with conda mixes.
+numpy>=1.26.4,<2
 pandas==2.3.2
 duckdb==1.4.0
 pydantic==2.11.7

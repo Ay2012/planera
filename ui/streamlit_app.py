@@ -39,70 +39,61 @@ def analyze_query(query: str) -> dict[str, Any]:
     return response.json()
 
 
-def render_verified_badge(verified: bool) -> None:
-    """Render the verified state as a styled badge."""
-
-    tone = "#0f766e" if verified else "#b45309"
-    background = "#ccfbf1" if verified else "#fef3c7"
-    label = "Verified" if verified else "Unverified"
-    st.markdown(
-        f"""
-        <div style="padding:0.6rem 0.9rem;border-radius:999px;display:inline-block;
-                    background:{background};color:{tone};font-weight:700;">
-            {label}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_evidence(response: dict[str, Any]) -> None:
-    """Render top-line metrics and breakdown tables from evidence."""
-
-    evidence = response.get("evidence", [])
-    metrics = {item["label"]: item for item in evidence if not item.get("metadata", {}).get("kind") == "table"}
-    tables = [item for item in evidence if item.get("metadata", {}).get("kind") == "table"]
-
-    metric_cols = st.columns(3)
-    current = metrics.get("current_velocity", {})
-    previous = metrics.get("previous_velocity", {})
-    delta = metrics.get("delta", {})
-    metric_cols[0].metric("Current", current.get("value", "n/a"))
-    metric_cols[1].metric("Previous", previous.get("value", "n/a"))
-    metric_cols[2].metric("Delta", delta.get("value", "n/a"), f"{delta.get('metadata', {}).get('delta_pct', 0)}%")
-
-    for table in tables:
-        rows = table.get("value", [])
-        if not rows:
-            continue
-        st.markdown(f"**{table['dimension'].replace('_', ' ').title()} Breakdown**")
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-
 def render_trace(response: dict[str, Any]) -> None:
     """Render the execution trace with expandable detail."""
 
     for event in response.get("trace", []):
-        status_color = {"completed": "green", "failed": "red", "started": "blue"}.get(event["status"], "gray")
+        status_color = {
+            "completed": "green",
+            "failed": "red",
+            "started": "blue",
+            "skipped": "orange",
+        }.get(event["status"], "gray")
         with st.expander(f"{event['step']} · {event['status']}", expanded=False):
             st.markdown(f":{status_color}[{event['status'].upper()}]")
             st.json(event.get("details", {}))
 
 
 def render_executed_steps(response: dict[str, Any]) -> None:
-    """Render executed SQL/pandas steps and their output previews."""
+    """Render executed SQL/pandas steps: full query text and result previews always visible."""
 
-    for step in response.get("executed_steps", []):
-        label = f"{step['id']} · {step['kind']} · {step['status']}"
-        with st.expander(label, expanded=False):
-            st.markdown(f"**Purpose**: {step['purpose']}")
-            st.code(step["code"], language="sql" if step["kind"] == "sql" else "python")
-            if step.get("artifact"):
-                artifact = step["artifact"]
-                st.markdown(f"**Output Alias**: `{step['output_alias']}`")
-                st.caption(f"Rows: {artifact.get('row_count', 0)}")
-                if artifact.get("preview_rows"):
-                    st.dataframe(pd.DataFrame(artifact["preview_rows"]), use_container_width=True, hide_index=True)
+    steps = response.get("executed_steps") or []
+    if not steps:
+        st.info("No SQL steps ran for this query. The planner may have failed, or execution was skipped.")
+        return
+
+    st.caption(f"{len(steps)} step(s) executed (attempt numbers reflect retries after repair).")
+
+    for idx, step in enumerate(steps, start=1):
+        lang = "sql" if step.get("kind") == "sql" else "python"
+        status = step.get("status", "unknown")
+        badge = "Success" if status == "success" else "Failed"
+        header = f"Step {idx} · id `{step.get('id', '?')}` · {step.get('kind', '?')} · {badge}"
+        if step.get("attempt", 1) != 1:
+            header += f" (attempt {step['attempt']})"
+
+        with st.container(border=True):
+            st.markdown(f"**{header}**")
+            st.markdown(f"**Purpose:** {step.get('purpose', '')}")
+            st.markdown("**Query / code:**")
+            st.code(step.get("code") or "", language=lang)
+            st.markdown(f"**Output alias:** `{step.get('output_alias', '')}`")
+
+            artifact = step.get("artifact")
+            if artifact:
+                st.markdown("**Result:**")
+                st.caption(
+                    f"{artifact.get('row_count', 0)} rows"
+                    + (f" · columns: {', '.join(artifact.get('columns') or [])}" if artifact.get("columns") else "")
+                )
+                preview = artifact.get("preview_rows") or []
+                if preview:
+                    st.dataframe(pd.DataFrame(preview), use_container_width=True, hide_index=True)
+                elif status == "success":
+                    st.caption("No preview rows returned (empty or scalar output).")
+            elif status == "success":
+                st.caption("No artifact payload for this step.")
+
             if step.get("error"):
                 st.error(step["error"])
 
@@ -113,7 +104,7 @@ def render_errors(response: dict[str, Any]) -> None:
     errors = response.get("errors", [])
     if not errors:
         return
-    st.warning("Some workflow steps degraded gracefully during this run.")
+    st.warning("Some workflow steps reported issues during this run.")
     for error in errors:
         st.code(f"{error['step']}: {error['message']}")
 
@@ -155,7 +146,7 @@ st.markdown(
     <div class="hero-card">
         <h1 style="margin:0;color:#0f172a;">GTM Analytics Copilot</h1>
         <p style="margin:0.5rem 0 0 0;color:#334155;font-size:1.05rem;">
-            Ask a GTM business question and get the analysis, the verified answer, and the next move.
+            Ask a GTM business question and get structured analysis backed by executed steps and a full trace.
         </p>
     </div>
     """,
@@ -181,31 +172,26 @@ with right:
     st.subheader("What This MVP Does")
     st.markdown(
         """
-        - Uses Gemini to plan the next exact analysis step
-        - Executes SQL or restricted pandas over curated dataset views
-        - Replans when a step fails instead of stopping at the first error
-        - Verifies the headline metric before generating the answer
+        - Loads dataset schema (tables, columns, dtypes)
+        - LLM emits a compiled multi-step SQL plan (up to 3 steps)
+        - Deterministic execution against curated views; optional one repair on failure
+        - One analysis pass turns results into narrative (markdown)
         """
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
 if analyze and st.session_state.query.strip():
-    with st.status("Running Gemini planner-executor loop...", expanded=True) as status:
-        st.write("Loading semantic dataset context.")
-        st.write("Asking Gemini for the next exact analysis step.")
-        st.write("Executing the step and feeding results or errors back into the loop.")
+    with st.status("Running planner → execute → analysis...", expanded=True) as status:
+        st.write("Loading schema context.")
+        st.write("Planning and executing steps.")
         try:
             st.session_state.result = analyze_query(st.session_state.query.strip())
             status.update(label="Analysis complete", state="complete")
         except Exception as exc:
             st.session_state.result = {
-                "summary": "The backend request failed before the analysis could complete.",
-                "root_cause": "The UI could not reach the API or the API returned an error.",
-                "recommendation": "Confirm the FastAPI service is running and retry the request.",
-                "evidence": [],
+                "analysis": "The backend request failed before the analysis could complete.",
                 "trace": [],
                 "executed_steps": [],
-                "verified": False,
                 "errors": [{"step": "ui_request", "message": str(exc), "recoverable": False, "details": {}}],
             }
             status.update(label="Analysis failed", state="error")
@@ -214,26 +200,9 @@ result = st.session_state.result
 
 if result:
     st.write("")
-    col1, col2 = st.columns([1.5, 1.0])
-    with col1:
-        st.markdown('<div class="panel-card">', unsafe_allow_html=True)
-        st.subheader("Results")
-        st.markdown(result["summary"])
-        st.markdown(f"**Root Cause**: {result['root_cause']}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col2:
-        st.markdown('<div class="panel-card">', unsafe_allow_html=True)
-        st.subheader("Verification")
-        render_verified_badge(result["verified"])
-        st.write("")
-        st.markdown(f"**Next Best Action**: {result['recommendation']}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.write("")
     st.markdown('<div class="panel-card">', unsafe_allow_html=True)
-    st.subheader("Evidence")
-    render_evidence(result)
+    st.subheader("Analysis")
+    st.markdown(result.get("analysis", ""))
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.write("")
@@ -253,5 +222,5 @@ if result:
     st.subheader("Workflow Notes")
     render_errors(result)
     if not result.get("errors"):
-        st.success("All workflow steps completed without recoverable errors.")
+        st.success("No errors recorded for this run.")
     st.markdown("</div>", unsafe_allow_html=True)

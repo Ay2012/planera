@@ -13,7 +13,7 @@ from app.data.transforms import transform_crm_dataframe, transform_sales_dataset
 
 @dataclass(frozen=True)
 class DataBundle:
-    """In-memory datasets used by approved analytics tools."""
+    """In-memory datasets used for analytics."""
 
     crm: pd.DataFrame
     subscriptions: pd.DataFrame | None
