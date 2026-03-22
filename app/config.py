@@ -1,0 +1,46 @@
+"""Application configuration."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+
+class Settings(BaseSettings):
+    """Runtime settings loaded from environment variables."""
+
+    app_name: str = "GTM Analytics Copilot"
+    app_env: str = "development"
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    streamlit_port: int = 8501
+    data_dir: Path = Field(default=BASE_DIR / "data")
+    crm_path: Path = Field(default=BASE_DIR / "data" / "crm.csv")
+    subscriptions_path: Path = Field(default=BASE_DIR / "data" / "subscriptions.csv")
+    crm_dataset_dir: Path = Field(default=BASE_DIR / "data" / "CRM+Sales+Opportunities")
+    reference_date: str = "2026-03-21"
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_model: str = "gemini-2.0-flash"
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_model: str = "gpt-4.1-mini"
+    log_level: str = "INFO"
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return a cached settings instance."""
+
+    return Settings()
