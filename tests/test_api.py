@@ -26,7 +26,7 @@ def test_analyze_endpoint_structure() -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
             "analysis": "## Summary\nPipeline velocity improved.\n",
-            "trace": [{"step": "planner_node", "status": "completed", "details": {"action": "finish"}}],
+            "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
             "executed_steps": [
                 {
                     "id": "step_1",

@@ -50,19 +50,45 @@ def render_trace(response: dict[str, Any]) -> None:
 
 
 def render_executed_steps(response: dict[str, Any]) -> None:
-    """Render executed SQL/pandas steps and their output previews."""
+    """Render executed SQL/pandas steps: full query text and result previews always visible."""
 
-    for step in response.get("executed_steps", []):
-        label = f"{step['id']} · {step['kind']} · {step['status']}"
-        with st.expander(label, expanded=False):
-            st.markdown(f"**Purpose**: {step['purpose']}")
-            st.code(step["code"], language="sql" if step["kind"] == "sql" else "python")
-            if step.get("artifact"):
-                artifact = step["artifact"]
-                st.markdown(f"**Output Alias**: `{step['output_alias']}`")
-                st.caption(f"Rows: {artifact.get('row_count', 0)}")
-                if artifact.get("preview_rows"):
-                    st.dataframe(pd.DataFrame(artifact["preview_rows"]), use_container_width=True, hide_index=True)
+    steps = response.get("executed_steps") or []
+    if not steps:
+        st.info("No SQL steps ran for this query. The planner may have failed, or execution was skipped.")
+        return
+
+    st.caption(f"{len(steps)} step(s) executed (attempt numbers reflect retries after repair).")
+
+    for idx, step in enumerate(steps, start=1):
+        lang = "sql" if step.get("kind") == "sql" else "python"
+        status = step.get("status", "unknown")
+        badge = "Success" if status == "success" else "Failed"
+        header = f"Step {idx} · id `{step.get('id', '?')}` · {step.get('kind', '?')} · {badge}"
+        if step.get("attempt", 1) != 1:
+            header += f" (attempt {step['attempt']})"
+
+        with st.container(border=True):
+            st.markdown(f"**{header}**")
+            st.markdown(f"**Purpose:** {step.get('purpose', '')}")
+            st.markdown("**Query / code:**")
+            st.code(step.get("code") or "", language=lang)
+            st.markdown(f"**Output alias:** `{step.get('output_alias', '')}`")
+
+            artifact = step.get("artifact")
+            if artifact:
+                st.markdown("**Result:**")
+                st.caption(
+                    f"{artifact.get('row_count', 0)} rows"
+                    + (f" · columns: {', '.join(artifact.get('columns') or [])}" if artifact.get("columns") else "")
+                )
+                preview = artifact.get("preview_rows") or []
+                if preview:
+                    st.dataframe(pd.DataFrame(preview), use_container_width=True, hide_index=True)
+                elif status == "success":
+                    st.caption("No preview rows returned (empty or scalar output).")
+            elif status == "success":
+                st.caption("No artifact payload for this step.")
+
             if step.get("error"):
                 st.error(step["error"])
 
@@ -142,8 +168,8 @@ with right:
     st.markdown(
         """
         - Loads dataset schema (tables, columns, dtypes)
-        - LLM plans the next SQL or pandas step
-        - Executes against curated views; replans on failure
+        - LLM emits a compiled multi-step SQL plan (up to 3 steps)
+        - Deterministic execution against curated views; optional one repair on failure
         - One analysis pass turns results into narrative (markdown)
         """
     )

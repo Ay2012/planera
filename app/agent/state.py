@@ -1,4 +1,4 @@
-"""Typed workflow state for the LangGraph planner-executor loop."""
+"""Typed workflow state for the compiled-plan analytics workflow."""
 
 from __future__ import annotations
 
@@ -15,17 +15,14 @@ class AnalysisState(TypedDict):
     intent: str
     metric: str
     planner_reasoning: str
-    current_step: dict[str, Any] | None
-    planner_action: str
+    compiled_plan: dict[str, Any] | None
+    repair_attempted: bool
     artifacts: dict[str, Any]
     executed_steps: list[dict[str, Any]]
     analysis: str
-    retry_count: int
-    max_retries: int
     total_steps: int
-    max_steps: int
     last_error: dict[str, Any] | None
-    loop_status: str
+    workflow_status: str
     trace: list[dict[str, Any]]
     errors: list[dict[str, Any]]
 
@@ -39,17 +36,14 @@ def create_initial_state(query: str) -> AnalysisState:
         intent="",
         metric="",
         planner_reasoning="",
-        current_step=None,
-        planner_action="execute_step",
+        compiled_plan=None,
+        repair_attempted=False,
         artifacts={},
         executed_steps=[],
         analysis="",
-        retry_count=0,
-        max_retries=2,
         total_steps=0,
-        max_steps=5,
         last_error=None,
-        loop_status="planning",
+        workflow_status="planning",
         trace=[],
         errors=[],
     )

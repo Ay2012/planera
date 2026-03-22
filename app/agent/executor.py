@@ -1,15 +1,15 @@
-"""Execution engine for planner-emitted SQL and pandas steps."""
+"""Execution engine for compiled SQL plans and legacy pandas helpers."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import duckdb
 import pandas as pd
 
 from app.agent.state import AnalysisState
 from app.data.semantic_model import get_semantic_context, new_duckdb_connection
-from app.schemas import ArtifactSummary, ExecutedStep
+from app.schemas import ArtifactSummary, CompiledPlanStep, ExecutedStep
 
 
 SAFE_BUILTINS: dict[str, Any] = {
@@ -85,43 +85,104 @@ def _execute_pandas(state: AnalysisState, step: dict[str, Any]) -> ArtifactSumma
     return _summarize_artifact(step["output_alias"], result)
 
 
-def execute_current_step(state: AnalysisState) -> AnalysisState:
-    """Execute the step chosen by the planner."""
+def _empty_table_failure(artifact: ArtifactSummary) -> bool:
+    return artifact.artifact_type == "table" and artifact.row_count == 0
 
-    step = state["current_step"]
-    if step is None:
-        raise ValueError("No current step available for execution.")
+
+def compiled_plan_row_to_internal(row: dict[str, Any] | CompiledPlanStep) -> dict[str, Any]:
+    """Map a compiled plan step to the executor shape used by `_execute_sql`."""
+
+    if isinstance(row, CompiledPlanStep):
+        row = row.model_dump()
+    sid = row["id"]
+    alias = row.get("output_alias") or f"step_{sid}"
+    return {
+        "id": str(sid),
+        "kind": "sql",
+        "purpose": row["purpose"],
+        "code": row["query"],
+        "output_alias": alias,
+    }
+
+
+def _try_sql_step(
+    state: AnalysisState,
+    internal: dict[str, Any],
+    attempt: int,
+) -> tuple[Literal["success", "failed"], ExecutedStep]:
+    """Run one SQL step with post-execution validation (non-empty table)."""
 
     state["total_steps"] += 1
-    attempt = state["retry_count"] + 1
     try:
-        artifact = _execute_sql(state, step) if step["kind"] == "sql" else _execute_pandas(state, step)
+        artifact = _execute_sql(state, internal)
+        if _empty_table_failure(artifact):
+            state["artifacts"].pop(internal["output_alias"], None)
+            raise ValueError("Step returned an empty result set.")
         executed = ExecutedStep(
-            id=step["id"],
-            kind=step["kind"],
-            purpose=step["purpose"],
-            code=step["code"],
-            output_alias=step["output_alias"],
+            id=internal["id"],
+            kind="sql",
+            purpose=internal["purpose"],
+            code=internal["code"],
+            output_alias=internal["output_alias"],
             attempt=attempt,
             status="success",
             artifact=artifact,
         )
         state["executed_steps"].append(executed.model_dump())
         state["last_error"] = None
-        state["loop_status"] = "step_succeeded"
-        return state
+        return "success", executed
     except Exception as exc:
         executed = ExecutedStep(
-            id=step["id"],
-            kind=step["kind"],
-            purpose=step["purpose"],
-            code=step["code"],
-            output_alias=step["output_alias"],
+            id=internal["id"],
+            kind="sql",
+            purpose=internal["purpose"],
+            code=internal["code"],
+            output_alias=internal["output_alias"],
             attempt=attempt,
             status="failed",
             error=str(exc),
         )
         state["executed_steps"].append(executed.model_dump())
-        state["last_error"] = {"step_id": step["id"], "message": str(exc), "code": step["code"]}
-        state["loop_status"] = "step_failed"
-        return state
+        state["last_error"] = {"step_id": internal["id"], "message": str(exc), "code": internal["code"]}
+        return "failed", executed
+
+
+def execute_plan(state: AnalysisState, compiled_plan: dict[str, Any]) -> dict[str, Any]:
+    """
+    Iterate compiled plan steps in order: validate via execute + empty-table check.
+    No LLM calls. On first failure, stop and return structured status.
+    """
+
+    rows = list(compiled_plan.get("plan") or [])
+    rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
+
+    for row in rows:
+        internal = compiled_plan_row_to_internal(row)
+        status, _ = _try_sql_step(state, internal, attempt=1)
+        if status == "failed":
+            sid = internal["id"]
+            return {
+                "status": "failed",
+                "failed_step_id": sid,
+                "error": state["last_error"]["message"] if state["last_error"] else "Unknown error",
+            }
+
+    return {"status": "success"}
+
+
+def execute_single_plan_step(
+    state: AnalysisState,
+    compiled_step: dict[str, Any],
+    attempt: int,
+) -> dict[str, Any]:
+    """Re-run a single compiled step (e.g. after repair)."""
+
+    internal = compiled_plan_row_to_internal(compiled_step)
+    status, _ = _try_sql_step(state, internal, attempt=attempt)
+    if status == "failed":
+        return {
+            "status": "failed",
+            "failed_step_id": internal["id"],
+            "error": state["last_error"]["message"] if state["last_error"] else "Unknown error",
+        }
+    return {"status": "success"}

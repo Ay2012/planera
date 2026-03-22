@@ -1,4 +1,4 @@
-"""LangGraph workflow: schema context, planner/execute/review loop, analysis."""
+"""LangGraph workflow: schema context, compiled plan, deterministic execution, analysis."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.analysis import run_analysis_narrative
-from app.agent.executor import execute_current_step
-from app.agent.planner import plan_next_step
-from app.agent.reviewer import review_last_step
+from app.agent.executor import execute_plan, execute_single_plan_step
+from app.agent.planner import plan_compiled_query, repair_failed_step
 from app.agent.state import AnalysisState, create_initial_state
 from app.data.semantic_model import get_semantic_context
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _append_trace(state: AnalysisState, step: str, status: str, details: dict[str, Any] | None = None) -> None:
@@ -37,48 +39,95 @@ def load_schema_context_node(state: AnalysisState) -> AnalysisState:
     return state
 
 
-def planner_node(state: AnalysisState) -> AnalysisState:
-    step_name = "planner_node"
-    _append_trace(state, step_name, "started", {"retry_count": state["retry_count"], "total_steps": state["total_steps"]})
+def planner_compiled_node(state: AnalysisState) -> AnalysisState:
+    step_name = "planner_compiled_node"
+    _append_trace(state, step_name, "started", {"total_steps": state["total_steps"]})
     try:
-        state = plan_next_step(state)
+        state = plan_compiled_query(state)
+        plan = state.get("compiled_plan") or {}
         _append_trace(
             state,
             step_name,
             "completed",
-            {"action": state["planner_action"], "reasoning": state["planner_reasoning"], "step": state["current_step"]},
+            {
+                "objective": plan.get("objective"),
+                "step_count": len(plan.get("plan") or []),
+                "metric": plan.get("metric"),
+            },
         )
     except Exception as exc:
+        logger.warning("%s failed: %s", step_name, exc, exc_info=True)
         _append_error(state, step_name, str(exc), recoverable=False)
-        state["loop_status"] = "fatal_error"
+        state["workflow_status"] = "planner_failed"
+        state["compiled_plan"] = None
         _append_trace(state, step_name, "failed", {"message": str(exc)})
     return state
 
 
-def execution_node(state: AnalysisState) -> AnalysisState:
-    step_name = "execution_node"
-    _append_trace(state, step_name, "started", {"step": state["current_step"]})
-    state = execute_current_step(state)
-    last = state["executed_steps"][-1]
-    if last["status"] == "failed":
-        _append_error(state, step_name, last["error"] or "Unknown execution error", recoverable=True, details={"step_id": last["id"]})
-        _append_trace(state, step_name, "failed", {"step_id": last["id"], "error": last["error"]})
+def execute_plan_node(state: AnalysisState) -> AnalysisState:
+    step_name = "execute_plan_node"
+    if state["workflow_status"] == "planner_failed" or not state.get("compiled_plan"):
+        _append_trace(state, step_name, "skipped", {"reason": "no compiled plan"})
+        return state
+
+    plan = state["compiled_plan"]
+    if not plan.get("plan"):
+        msg = "Planner returned an empty plan."
+        _append_error(state, step_name, msg, recoverable=False)
+        state["workflow_status"] = "execution_failed"
+        _append_trace(state, step_name, "failed", {"message": msg})
+        return state
+
+    _append_trace(state, step_name, "started", {"steps": len(plan["plan"])})
+    outcome = execute_plan(state, plan)
+
+    if outcome["status"] == "success":
+        state["workflow_status"] = "ready_to_analyze"
+        _append_trace(state, step_name, "completed", {"status": "success"})
+        return state
+
+    failed_id = outcome["failed_step_id"]
+    err = outcome.get("error", "Unknown execution error")
+
+    try:
+        state = repair_failed_step(state, failed_id, err)
+    except Exception as exc:
+        _append_error(state, "repair_planner", str(exc), recoverable=False, details={"failed_step_id": failed_id})
+        state["workflow_status"] = "execution_failed"
+        _append_trace(state, step_name, "failed", {"phase": "repair", "message": str(exc)})
+        return state
+
+    if state["executed_steps"] and state["executed_steps"][-1]["status"] == "failed":
+        state["executed_steps"].pop()
+
+    plan = state["compiled_plan"] or {}
+    step_row = next((r for r in (plan.get("plan") or []) if str(r.get("id")) == str(failed_id)), None)
+    if not step_row:
+        _append_error(state, step_name, "Repaired step missing from plan.", recoverable=False)
+        state["workflow_status"] = "execution_failed"
+        return state
+
+    retry = execute_single_plan_step(state, step_row, attempt=2)
+    if retry["status"] == "failed":
+        _append_error(
+            state,
+            step_name,
+            f"Step {retry.get('failed_step_id', failed_id)} failed after repair: {retry.get('error', err)}",
+            recoverable=False,
+            details={"failed_step_id": failed_id},
+        )
+        state["workflow_status"] = "execution_failed"
+        _append_trace(state, step_name, "failed", {"phase": "retry", "failed_step_id": failed_id})
     else:
-        _append_trace(state, step_name, "completed", {"step_id": last["id"], "artifact": last["artifact"]})
-    return state
+        state["workflow_status"] = "ready_to_analyze"
+        _append_trace(state, step_name, "completed", {"status": "success_after_repair"})
 
-
-def review_node(state: AnalysisState) -> AnalysisState:
-    step_name = "review_node"
-    _append_trace(state, step_name, "started", {"loop_status": state["loop_status"]})
-    state = review_last_step(state)
-    _append_trace(state, step_name, "completed", {"loop_status": state["loop_status"], "retry_count": state["retry_count"]})
     return state
 
 
 def analysis_node(state: AnalysisState) -> AnalysisState:
     step_name = "analysis_node"
-    _append_trace(state, step_name, "started", {})
+    _append_trace(state, step_name, "started", {"workflow_status": state["workflow_status"]})
     try:
         state = run_analysis_narrative(state)
         _append_trace(state, step_name, "completed", {"length": len(state["analysis"])})
@@ -90,19 +139,9 @@ def analysis_node(state: AnalysisState) -> AnalysisState:
 
 
 def route_after_planner(state: AnalysisState) -> str:
-    if state["loop_status"] == "fatal_error":
+    if state["workflow_status"] == "planner_failed":
         return "analysis_node"
-    if state["planner_action"] == "finish":
-        return "analysis_node"
-    return "execution_node"
-
-
-def route_after_review(state: AnalysisState) -> str:
-    if state["loop_status"] == "fatal_error":
-        return "analysis_node"
-    if state["loop_status"] == "ready_to_analyze":
-        return "analysis_node"
-    return "planner_node"
+    return "execute_plan_node"
 
 
 @lru_cache(maxsize=1)
@@ -111,16 +150,14 @@ def build_graph():
 
     graph = StateGraph(AnalysisState)
     graph.add_node("load_schema_context_node", load_schema_context_node)
-    graph.add_node("planner_node", planner_node)
-    graph.add_node("execution_node", execution_node)
-    graph.add_node("review_node", review_node)
+    graph.add_node("planner_compiled_node", planner_compiled_node)
+    graph.add_node("execute_plan_node", execute_plan_node)
     graph.add_node("analysis_node", analysis_node)
 
     graph.add_edge(START, "load_schema_context_node")
-    graph.add_edge("load_schema_context_node", "planner_node")
-    graph.add_conditional_edges("planner_node", route_after_planner)
-    graph.add_edge("execution_node", "review_node")
-    graph.add_conditional_edges("review_node", route_after_review)
+    graph.add_edge("load_schema_context_node", "planner_compiled_node")
+    graph.add_conditional_edges("planner_compiled_node", route_after_planner)
+    graph.add_edge("execute_plan_node", "analysis_node")
     graph.add_edge("analysis_node", END)
     return graph.compile()
 

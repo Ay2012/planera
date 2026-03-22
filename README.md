@@ -66,9 +66,8 @@ Core modules:
 
 - `app/data/semantic_model.py`: curated dataset views and schema manifest
 - `app/llm/`: OpenAI or Gemini client
-- `app/agent/planner.py`: next-step planning
-- `app/agent/executor.py`: SQL and pandas execution engine
-- `app/agent/reviewer.py`: retry and replan routing
+- `app/agent/planner.py`: compiled multi-step SQL plan and optional repair
+- `app/agent/executor.py`: SQL execution engine (pandas helpers retained)
 - `app/agent/analysis.py`: single-pass narrative from query + steps
 - `app/agent/graph.py`: LangGraph orchestration
 - `app/api/routes.py`: API surface

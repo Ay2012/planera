@@ -9,7 +9,19 @@ from app.llm import get_llm_client
 
 
 def run_analysis_narrative(state: AnalysisState) -> AnalysisState:
-    """Produce markdown-friendly analysis from query, schema context, and step outputs."""
+    """Produce markdown-friendly analysis from query, objective, and step outputs."""
+
+    plan = state.get("compiled_plan") or {}
+    objective = plan.get("objective") or ""
+    metric = plan.get("metric") or state.get("metric") or ""
+    metric_direction = plan.get("metric_direction") or ""
+
+    workflow = state.get("workflow_status", "")
+    failure_note = ""
+    if workflow in ("planner_failed", "execution_failed"):
+        errs = state.get("errors") or []
+        summary = "; ".join(e.get("message", "") for e in errs[-3:]) if errs else "See trace and errors."
+        failure_note = f"\nWorkflow note: execution did not complete successfully ({workflow}). {summary}\n"
 
     prompt = f"""
 You are a GTM analytics analyst. Explain what the data shows in response to the user's question.
@@ -24,6 +36,12 @@ Rules:
 User question:
 {state["query"]}
 
+Analytical objective (from planner):
+{objective}
+
+Primary metric (if provided): {metric}
+Metric directionality (if provided): {metric_direction}
+{failure_note}
 Dataset schema (reference):
 {json.dumps(state["dataset_context"], indent=2)}
 
