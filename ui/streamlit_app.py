@@ -43,7 +43,12 @@ def render_trace(response: dict[str, Any]) -> None:
     """Render the execution trace with expandable detail."""
 
     for event in response.get("trace", []):
-        status_color = {"completed": "green", "failed": "red", "started": "blue"}.get(event["status"], "gray")
+        status_color = {
+            "completed": "green",
+            "failed": "red",
+            "started": "blue",
+            "skipped": "orange",
+        }.get(event["status"], "gray")
         with st.expander(f"{event['step']} · {event['status']}", expanded=False):
             st.markdown(f":{status_color}[{event['status'].upper()}]")
             st.json(event.get("details", {}))

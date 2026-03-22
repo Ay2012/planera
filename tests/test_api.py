@@ -3,9 +3,27 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas import AnalyzeResponse
 
 
 client = TestClient(app)
+
+
+def test_analyze_response_accepts_skipped_trace() -> None:
+    """execute_plan_node emits skipped when there is no plan; API must still serialize."""
+    resp = AnalyzeResponse(
+        analysis="Planner failed; no execution.",
+        trace=[
+            {
+                "step": "execute_plan_node",
+                "status": "skipped",
+                "details": {"reason": "no compiled plan"},
+            }
+        ],
+        executed_steps=[],
+        errors=[],
+    )
+    assert resp.trace[0].status == "skipped"
 
 
 def test_health_endpoint() -> None:

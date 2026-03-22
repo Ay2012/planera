@@ -17,7 +17,7 @@ class TraceEvent(BaseModel):
     """Trace event for user-facing workflow visibility."""
 
     step: str
-    status: Literal["started", "completed", "failed"]
+    status: Literal["started", "completed", "failed", "skipped"]
     details: dict[str, Any] = Field(default_factory=dict)
 
 
