@@ -9,7 +9,6 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from app.config import get_settings
 from app.data.loader import load_data
 
 
@@ -22,17 +21,6 @@ class SemanticContext:
     raw_views: dict[str, pd.DataFrame]
     semantic_views: dict[str, pd.DataFrame]
     schema_manifest: dict[str, Any]
-
-
-def _read_raw_views() -> dict[str, pd.DataFrame]:
-    settings = get_settings()
-    dataset_dir = settings.crm_dataset_dir
-    return {
-        "sales_pipeline": pd.read_csv(dataset_dir / "sales_pipeline.csv"),
-        "accounts": pd.read_csv(dataset_dir / "accounts.csv"),
-        "products": pd.read_csv(dataset_dir / "products.csv"),
-        "sales_teams": pd.read_csv(dataset_dir / "sales_teams.csv"),
-    }
 
 
 def _schema_for_frame(name: str, frame: pd.DataFrame) -> dict[str, Any]:
@@ -48,7 +36,7 @@ def get_semantic_context() -> SemanticContext:
     """Build and cache views plus a schema-only manifest for planning."""
 
     bundle = load_data()
-    raw_views = _read_raw_views()
+    raw_views = {name: frame.copy() for name, frame in bundle.raw_views.items()}
     semantic_views = {"opportunities_enriched": bundle.crm.copy()}
     all_frames = {**raw_views, **semantic_views}
     schema_manifest: dict[str, Any] = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import pandas as pd
 
@@ -15,6 +16,7 @@ from app.data.transforms import transform_crm_dataframe, transform_sales_dataset
 class DataBundle:
     """In-memory datasets used for analytics."""
 
+    raw_views: dict[str, pd.DataFrame]
     crm: pd.DataFrame
     subscriptions: pd.DataFrame | None
     reference_date: str
@@ -44,6 +46,19 @@ def _resolve_sales_reference_date() -> str:
     return close_dates.max().date().isoformat()
 
 
+def _read_real_sales_raw_views() -> dict[str, pd.DataFrame]:
+    """Read the raw CRM sales dataset files once."""
+
+    settings = get_settings()
+    dataset_dir = settings.crm_dataset_dir
+    return {
+        "sales_pipeline": pd.read_csv(dataset_dir / "sales_pipeline.csv"),
+        "accounts": pd.read_csv(dataset_dir / "accounts.csv"),
+        "products": pd.read_csv(dataset_dir / "products.csv"),
+        "sales_teams": pd.read_csv(dataset_dir / "sales_teams.csv"),
+    }
+
+
 def ensure_data_files() -> None:
     """Create demo CSVs when the expected files do not exist."""
 
@@ -62,6 +77,7 @@ def ensure_data_files() -> None:
     )
 
 
+@lru_cache(maxsize=1)
 def load_data() -> DataBundle:
     """Load and transform datasets for analytical use."""
 
@@ -69,12 +85,12 @@ def load_data() -> DataBundle:
 
     if _has_real_sales_dataset():
         reference_date = _resolve_sales_reference_date()
-        dataset_dir = settings.crm_dataset_dir
+        raw_views = _read_real_sales_raw_views()
         crm = transform_sales_dataset(
-            sales_pipeline=pd.read_csv(dataset_dir / "sales_pipeline.csv"),
-            accounts=pd.read_csv(dataset_dir / "accounts.csv"),
-            products=pd.read_csv(dataset_dir / "products.csv"),
-            sales_teams=pd.read_csv(dataset_dir / "sales_teams.csv"),
+            sales_pipeline=raw_views["sales_pipeline"],
+            accounts=raw_views["accounts"],
+            products=raw_views["products"],
+            sales_teams=raw_views["sales_teams"],
             reference_date=reference_date,
         )
         subscriptions = (
@@ -83,6 +99,7 @@ def load_data() -> DataBundle:
             else None
         )
         return DataBundle(
+            raw_views=raw_views,
             crm=crm,
             subscriptions=subscriptions,
             reference_date=reference_date,
@@ -90,10 +107,11 @@ def load_data() -> DataBundle:
         )
 
     ensure_data_files()
-    crm = pd.read_csv(settings.crm_path)
+    crm_raw = pd.read_csv(settings.crm_path)
     subscriptions = pd.read_csv(settings.subscriptions_path)
     return DataBundle(
-        crm=transform_crm_dataframe(crm, settings.reference_date),
+        raw_views={"crm": crm_raw, "subscriptions": subscriptions},
+        crm=transform_crm_dataframe(crm_raw, settings.reference_date),
         subscriptions=transform_subscriptions_dataframe(subscriptions),
         reference_date=settings.reference_date,
         source="canonical_mock",
