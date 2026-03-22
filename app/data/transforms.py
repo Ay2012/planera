@@ -1,4 +1,4 @@
-"""Data transformations shared by analytics tools."""
+"""Data transformations for CRM and subscription CSVs."""
 
 from __future__ import annotations
 

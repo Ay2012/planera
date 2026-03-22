@@ -38,7 +38,7 @@ def review_last_step(state: AnalysisState) -> AnalysisState:
 
         state["retry_count"] = 0
         if state["total_steps"] >= state["max_steps"]:
-            state["loop_status"] = "ready_to_verify"
+            state["loop_status"] = "ready_to_analyze"
         else:
             state["loop_status"] = "planning"
         return state

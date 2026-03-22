@@ -1,4 +1,4 @@
-"""Gemini-driven next-step planner."""
+"""LLM-driven next-step planner."""
 
 from __future__ import annotations
 
@@ -21,32 +21,30 @@ def _build_planner_prompt(state: AnalysisState) -> str:
         }
         for step in state["executed_steps"]
     ]
+    view_names = [view["name"] for view in state["dataset_context"].get("views", [])]
 
     prompt = f"""
-You are the planning brain of a GTM analytics agent.
+You are the planning component of a GTM analytics agent.
 
-Your job is to choose the next exact executable step for answering the user query over the provided CRM sales dataset.
+Choose the next executable step to answer the user's question using only the dataset described below.
 
 Rules:
-- Metric scope is pipeline_velocity only.
 - Return JSON only.
-- You may choose exactly one action:
-  1. "execute_step" with one SQL or pandas step
-  2. "finish" if the evidence is sufficient for final verification and answer generation
-- Prefer SQL against curated views whenever possible.
-- Use only these views: {json.dumps([view["name"] for view in state["dataset_context"].get("views", [])])}
-- For pandas steps, write code that assigns the final object to a variable named `result`.
-- Never use imports, file I/O, network calls, or plotting.
-- Keep each step small and purposeful.
-- If the previous step failed, fix the cause directly instead of repeating the same broken query.
-- Use categorical values exactly as shown in dataset_context. Status values are lowercase.
-- Treat an empty result set as a failed step that must be corrected quickly.
-- Aim to finish in at most 2 successful execution steps unless a prior step failed.
+- Choose exactly one action:
+  1. "execute_step" — one SQL or pandas step
+  2. "finish" — enough has been computed to hand off to the analysis step (no more code runs)
+- Prefer SQL against the registered views when possible.
+- Use only these views/tables: {json.dumps(view_names)}
+- For pandas steps, assign the final result to a variable named `result`.
+- No imports, file I/O, network calls, or plotting.
+- Keep each step small. If the previous step failed, fix the cause instead of repeating the same mistake.
+- Treat an empty result table as a failure to correct on the next iteration.
+- Prefer to finish after a small number of successful steps unless errors forced extra attempts.
 
 User query:
 {state["query"]}
 
-Dataset context:
+Dataset schema (tables, columns, dtypes, row counts):
 {json.dumps(state["dataset_context"], indent=2)}
 
 Completed steps:
@@ -58,7 +56,7 @@ Latest error:
 Return JSON in this shape:
 {{
   "intent": "diagnosis|comparison|recommendation",
-  "metric": "pipeline_velocity",
+  "metric": "<short label for what you are measuring, or empty string>",
   "reasoning_summary": "...",
   "action": "execute_step|finish",
   "completion_reason": "optional when action is finish",
@@ -79,7 +77,7 @@ Return JSON in this shape:
 
 
 def plan_next_step(state: AnalysisState) -> AnalysisState:
-    """Call Gemini to produce the next step decision."""
+    """Call the LLM to produce the next step decision."""
 
     decision = get_llm_client().generate_json(_build_planner_prompt(state))
     parsed = PlannerDecision.model_validate(decision)
@@ -89,5 +87,5 @@ def plan_next_step(state: AnalysisState) -> AnalysisState:
     state["planner_reasoning"] = parsed.reasoning_summary
     state["planner_action"] = parsed.action
     state["current_step"] = parsed.step.model_dump() if parsed.step else None
-    state["loop_status"] = "ready_to_execute" if parsed.action == "execute_step" else "ready_to_verify"
+    state["loop_status"] = "ready_to_execute" if parsed.action == "execute_step" else "ready_to_analyze"
     return state

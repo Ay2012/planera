@@ -1,4 +1,4 @@
-"""LangGraph workflow for the Gemini planner/executor/replanner loop."""
+"""LangGraph workflow: schema context, planner/execute/review loop, analysis."""
 
 from __future__ import annotations
 
@@ -7,13 +7,11 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from app.agent.analysis import run_analysis_narrative
 from app.agent.executor import execute_current_step
 from app.agent.planner import plan_next_step
-from app.agent.recommender import build_recommendation
 from app.agent.reviewer import review_last_step
 from app.agent.state import AnalysisState, create_initial_state
-from app.agent.synthesizer import synthesize_findings
-from app.agent.verifier import run_verification
 from app.data.semantic_model import get_semantic_context
 
 
@@ -25,8 +23,8 @@ def _append_error(state: AnalysisState, step: str, message: str, recoverable: bo
     state["errors"].append({"step": step, "message": message, "recoverable": recoverable, "details": details or {}})
 
 
-def prepare_context_node(state: AnalysisState) -> AnalysisState:
-    step_name = "prepare_context_node"
+def load_schema_context_node(state: AnalysisState) -> AnalysisState:
+    step_name = "load_schema_context_node"
     _append_trace(state, step_name, "started", {})
     context = get_semantic_context()
     state["dataset_context"] = context.schema_manifest
@@ -34,7 +32,7 @@ def prepare_context_node(state: AnalysisState) -> AnalysisState:
         state,
         step_name,
         "completed",
-        {"reference_date": context.reference_date, "views": [view["name"] for view in context.schema_manifest["views"]]},
+        {"reference_date": context.reference_date, "views": [v["name"] for v in context.schema_manifest.get("views", [])]},
     )
     return state
 
@@ -78,41 +76,14 @@ def review_node(state: AnalysisState) -> AnalysisState:
     return state
 
 
-def verification_node(state: AnalysisState) -> AnalysisState:
-    step_name = "verification_node"
+def analysis_node(state: AnalysisState) -> AnalysisState:
+    step_name = "analysis_node"
     _append_trace(state, step_name, "started", {})
     try:
-        state = run_verification(state)
-        _append_trace(state, step_name, "completed", state["verification"])
+        state = run_analysis_narrative(state)
+        _append_trace(state, step_name, "completed", {"length": len(state["analysis"])})
     except Exception as exc:
-        state["verified"] = False
-        _append_error(state, step_name, str(exc), recoverable=False)
-        _append_trace(state, step_name, "failed", {"message": str(exc)})
-    return state
-
-
-def synthesis_node(state: AnalysisState) -> AnalysisState:
-    step_name = "synthesis_node"
-    _append_trace(state, step_name, "started", {})
-    try:
-        state = synthesize_findings(state)
-        _append_trace(state, step_name, "completed", {"summary": state["summary"], "root_cause": state["root_cause"]})
-    except Exception as exc:
-        state["summary"] = "The agent could not synthesize a final summary."
-        state["root_cause"] = "Synthesis failed after execution."
-        _append_error(state, step_name, str(exc), recoverable=False)
-        _append_trace(state, step_name, "failed", {"message": str(exc)})
-    return state
-
-
-def recommendation_node(state: AnalysisState) -> AnalysisState:
-    step_name = "recommendation_node"
-    _append_trace(state, step_name, "started", {})
-    try:
-        state = build_recommendation(state)
-        _append_trace(state, step_name, "completed", {"recommendation": state["recommendation"]})
-    except Exception as exc:
-        state["recommendation"] = "Review the latest executed evidence and take the smallest concrete action on the slowest segment or stage."
+        state["analysis"] = f"The analysis step failed: {exc}"
         _append_error(state, step_name, str(exc), recoverable=False)
         _append_trace(state, step_name, "failed", {"message": str(exc)})
     return state
@@ -120,17 +91,17 @@ def recommendation_node(state: AnalysisState) -> AnalysisState:
 
 def route_after_planner(state: AnalysisState) -> str:
     if state["loop_status"] == "fatal_error":
-        return "verification_node"
+        return "analysis_node"
     if state["planner_action"] == "finish":
-        return "verification_node"
+        return "analysis_node"
     return "execution_node"
 
 
 def route_after_review(state: AnalysisState) -> str:
     if state["loop_status"] == "fatal_error":
-        return "verification_node"
-    if state["loop_status"] == "ready_to_verify":
-        return "verification_node"
+        return "analysis_node"
+    if state["loop_status"] == "ready_to_analyze":
+        return "analysis_node"
     return "planner_node"
 
 
@@ -139,22 +110,18 @@ def build_graph():
     """Compile and cache the LangGraph workflow."""
 
     graph = StateGraph(AnalysisState)
-    graph.add_node("prepare_context_node", prepare_context_node)
+    graph.add_node("load_schema_context_node", load_schema_context_node)
     graph.add_node("planner_node", planner_node)
     graph.add_node("execution_node", execution_node)
     graph.add_node("review_node", review_node)
-    graph.add_node("verification_node", verification_node)
-    graph.add_node("synthesis_node", synthesis_node)
-    graph.add_node("recommendation_node", recommendation_node)
+    graph.add_node("analysis_node", analysis_node)
 
-    graph.add_edge(START, "prepare_context_node")
-    graph.add_edge("prepare_context_node", "planner_node")
+    graph.add_edge(START, "load_schema_context_node")
+    graph.add_edge("load_schema_context_node", "planner_node")
     graph.add_conditional_edges("planner_node", route_after_planner)
     graph.add_edge("execution_node", "review_node")
     graph.add_conditional_edges("review_node", route_after_review)
-    graph.add_edge("verification_node", "synthesis_node")
-    graph.add_edge("synthesis_node", "recommendation_node")
-    graph.add_edge("recommendation_node", END)
+    graph.add_edge("analysis_node", END)
     return graph.compile()
 
 

@@ -35,23 +35,15 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     try:
         state = run_analysis(request.query)
         return AnalyzeResponse(
-            summary=state["summary"],
-            root_cause=state["root_cause"],
-            recommendation=state["recommendation"],
-            evidence=state.get("evidence", []),
+            analysis=state["analysis"],
             trace=state.get("trace", []),
             executed_steps=state.get("executed_steps", []),
-            verified=state.get("verified", False),
             errors=state.get("errors", []),
         )
     except Exception as exc:  # pragma: no cover - defensive API fallback
         return AnalyzeResponse(
-            summary="The analysis could not complete successfully.",
-            root_cause="The workflow failed before verified findings could be produced.",
-            recommendation="Inspect the returned error payload, correct the failure, and rerun the analysis.",
-            evidence=[],
+            analysis="The analysis could not complete successfully. Inspect the error payload and retry.",
             trace=[{"step": "api_analyze", "status": "failed", "details": {"message": str(exc)}}],
             executed_steps=[],
-            verified=False,
             errors=[{"step": "api_analyze", "message": str(exc), "recoverable": False, "details": {}}],
         )

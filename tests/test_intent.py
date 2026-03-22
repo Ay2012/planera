@@ -1,13 +1,12 @@
-"""Planner and synthesis contract tests with mocked Gemini responses."""
+"""Planner and analysis contract tests with mocked LLM responses."""
 
+from app.agent.analysis import run_analysis_narrative
 from app.agent.planner import plan_next_step
-from app.agent.recommender import build_recommendation
 from app.agent.state import create_initial_state
-from app.agent.synthesizer import synthesize_findings
 
 
-class FakeGemini:
-    """Minimal Gemini stub for planner/synthesis/recommendation tests."""
+class FakeLLM:
+    """Minimal stub for planner and analysis tests."""
 
     def generate_json(self, prompt: str):  # noqa: ANN001
         if '"action": "execute_step|finish"' in prompt:
@@ -28,17 +27,15 @@ class FakeGemini:
                     "is_final_step": False,
                 },
             }
-        if '"summary": "..."' in prompt:
+        if '"analysis":' in prompt and "markdown" in prompt.lower():
             return {
-                "summary": "Pipeline velocity improved from 69.77 to 66.14 days week over week.",
-                "root_cause": "Enterprise remains the slowest segment with Stage 2 as the largest open-pipeline bottleneck.",
-                "recommendation": "Focus managers on Enterprise Stage 2 opportunities first.",
+                "analysis": "## Summary\nPipeline velocity improved from 69.77 to 66.14 days week over week.\n\n**Focus:** Enterprise Stage 2.",
             }
-        return {"recommendation": "Focus managers on Enterprise Stage 2 opportunities first."}
+        return {"analysis": "Fallback analysis."}
 
 
 def test_planner_returns_exact_executable_step(monkeypatch) -> None:
-    monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: FakeGemini())
+    monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: FakeLLM())
     state = create_initial_state("Why did pipeline velocity drop this week?")
     state["dataset_context"] = {"reference_date": "2017-12-31", "views": [{"name": "opportunities_enriched"}]}
     state = plan_next_step(state)
@@ -47,14 +44,11 @@ def test_planner_returns_exact_executable_step(monkeypatch) -> None:
     assert state["current_step"]["output_alias"] == "comparison_result"
 
 
-def test_synthesis_and_recommendation_use_llm(monkeypatch) -> None:
-    monkeypatch.setattr("app.agent.synthesizer.get_llm_client", lambda: FakeGemini())
-    monkeypatch.setattr("app.agent.recommender.get_llm_client", lambda: FakeGemini())
+def test_analysis_narrative_uses_llm(monkeypatch) -> None:
+    monkeypatch.setattr("app.agent.analysis.get_llm_client", lambda: FakeLLM())
     state = create_initial_state("Why did pipeline velocity drop this week?")
-    state["evidence"] = [{"label": "current_velocity", "value": 66.14}, {"label": "previous_velocity", "value": 69.77}]
+    state["dataset_context"] = {"reference_date": "2017-12-31", "views": []}
     state["executed_steps"] = [{"id": "step_1", "purpose": "Compare", "status": "success", "output_alias": "comparison_result", "artifact": {"row_count": 2}}]
-    state = synthesize_findings(state)
-    state = build_recommendation(state)
-    assert "Pipeline velocity improved" in state["summary"]
-    assert "Enterprise" in state["root_cause"]
-    assert "Enterprise Stage 2" in state["recommendation"]
+    state = run_analysis_narrative(state)
+    assert "Pipeline velocity improved" in state["analysis"]
+    assert "Enterprise" in state["analysis"]

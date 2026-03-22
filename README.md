@@ -1,6 +1,6 @@
 # GTM Analytics Copilot
 
-GTM Analytics Copilot is an agentic analytics MVP for GTM teams. It takes a business question like "Why did pipeline velocity drop this week?", asks Gemini to plan the next exact analytical step, executes that step over the dataset, replans on failure, verifies the final metric deterministically, and returns a business-ready answer with a tactical next step.
+GTM Analytics Copilot is an agentic analytics MVP for GTM teams. It takes a business question like "Why did pipeline velocity drop this week?", loads schema context for the dataset, uses an LLM to plan the next SQL or pandas step, executes it over curated views, replans on failure, then runs a single analysis pass to produce a markdown narrative. The API returns that analysis plus trace and executed steps.
 
 ## Why This Is Not "Chat With CSV"
 
@@ -10,7 +10,7 @@ This project is intentionally constrained:
 - It does not let the model access arbitrary files or external systems.
 - It executes exact SQL or restricted pandas steps instead of vague chain-of-thought.
 - It replans using execution errors instead of silently falling back to rules.
-- It verifies the headline metric before narration.
+- It does not run a separate deterministic verification layer; the narrative is grounded in executed step outputs.
 - It exposes every step, code snippet, and output preview in the UI.
 
 That makes it feel much closer to a production analytics copilot than a generic chatbot sitting on top of a CSV file.
@@ -50,29 +50,29 @@ Backend:
 - FastAPI for API contracts
 - LangGraph for the planner-executor-replanner loop
 - DuckDB plus pandas over the provided CRM sales dataset
-- Gemini for planning, synthesis, and recommendation generation
+- OpenAI or Gemini for planning and final analysis text (see `LLM_PROVIDER`)
 
 Workflow:
 
-1. Load curated semantic views from the CRM dataset
-2. Ask Gemini for the next exact executable step
-3. Execute that SQL or pandas step
-4. If the step fails, send the error back to Gemini for replanning
-5. Loop until Gemini signals the investigation is complete
-6. Verify the headline pipeline metric deterministically
-7. Ask Gemini to synthesize the answer from verified evidence only
-8. Return trace, executed steps, evidence, and verification status
+1. Load curated views and a schema-only manifest (tables, columns, dtypes, row counts)
+2. Ask the LLM for the next executable step (or finish)
+3. Execute SQL (DuckDB) or restricted pandas
+4. On failure or empty results, review and replan
+5. Loop until the planner finishes or limits are hit
+6. Ask the LLM once to turn the executed results into markdown analysis
+7. Return `analysis`, `trace`, `executed_steps`, and `errors`
 
 Core modules:
 
 - `app/data/semantic_model.py`: curated dataset views and schema manifest
-- `app/llm/gemini.py`: Gemini API wrapper
-- `app/agent/planner.py`: Gemini next-step planning
+- `app/llm/`: OpenAI or Gemini client
+- `app/agent/planner.py`: next-step planning
 - `app/agent/executor.py`: SQL and pandas execution engine
 - `app/agent/reviewer.py`: retry and replan routing
-- `app/agent/graph.py`: LangGraph loop orchestration
+- `app/agent/analysis.py`: single-pass narrative from query + steps
+- `app/agent/graph.py`: LangGraph orchestration
 - `app/api/routes.py`: API surface
-- `ui/streamlit_app.py`: agent-trace demo UI
+- `ui/streamlit_app.py`: demo UI
 
 ## Repo Structure
 
@@ -143,7 +143,7 @@ Defined in `.env.example`:
 - `LOG_LEVEL`
 - `API_BASE_URL`
 
-`GEMINI_API_KEY` is required. This version does not include a non-LLM fallback path.
+Set `LLM_PROVIDER` to `openai` or `gemini` and provide the matching API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`). This version does not include a non-LLM fallback path.
 
 ## Data Model
 
@@ -181,8 +181,8 @@ pytest
 
 The test suite covers:
 
-- mocked Gemini planner/synthesis contracts
-- execution and verification behavior
+- mocked LLM planner and analysis contracts
+- executor and review behavior
 - API response shape
 
 ## Docker
@@ -205,24 +205,23 @@ Then open:
 3. Run the analysis and show the planner-executor loop spinner.
 4. Open the executed-steps panel and show the generated SQL or pandas code.
 5. Show the output preview for the most important step.
-6. Highlight the verified badge and top-line change.
-7. Expand the trace panel to show replanning-capable agent behavior.
-8. Close on the tactical recommendation.
+6. Expand the trace panel to show replanning-capable agent behavior.
+7. Close on the markdown analysis and next best insights.
 
 ## Screenshots
 
 Add screenshots here for:
 
 - main dashboard
-- evidence panel
+- analysis panel
 - trace panel
 
 ## Known Limitations
 
 - The current build is scoped to pipeline analytics on the provided CRM dataset.
 - Churn analysis is out of scope until a real subscriptions or churn dataset is added.
-- The planner is only allowed to use curated dataset views and bounded execution tools.
-- Gemini is required for planning and final answer generation.
+- The planner only sees registered views; execution is SQL or restricted pandas.
+- An API key is required for the configured `LLM_PROVIDER` (OpenAI or Gemini).
 
 ## Future Roadmap
 

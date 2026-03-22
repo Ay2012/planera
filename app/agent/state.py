@@ -1,4 +1,4 @@
-"""Typed workflow state for the Gemini-driven LangGraph loop."""
+"""Typed workflow state for the LangGraph planner-executor loop."""
 
 from __future__ import annotations
 
@@ -19,18 +19,13 @@ class AnalysisState(TypedDict):
     planner_action: str
     artifacts: dict[str, Any]
     executed_steps: list[dict[str, Any]]
-    evidence: list[dict[str, Any]]
-    verification: dict[str, Any]
-    verified: bool
+    analysis: str
     retry_count: int
     max_retries: int
     total_steps: int
     max_steps: int
     last_error: dict[str, Any] | None
     loop_status: str
-    summary: str
-    root_cause: str
-    recommendation: str
     trace: list[dict[str, Any]]
     errors: list[dict[str, Any]]
 
@@ -41,25 +36,20 @@ def create_initial_state(query: str) -> AnalysisState:
     return AnalysisState(
         query=query,
         dataset_context={},
-        intent="diagnosis",
-        metric="pipeline_velocity",
+        intent="",
+        metric="",
         planner_reasoning="",
         current_step=None,
         planner_action="execute_step",
         artifacts={},
         executed_steps=[],
-        evidence=[],
-        verification={},
-        verified=False,
+        analysis="",
         retry_count=0,
         max_retries=2,
         total_steps=0,
         max_steps=5,
         last_error=None,
         loop_status="planning",
-        summary="",
-        root_cause="",
-        recommendation="",
         trace=[],
         errors=[],
     )
