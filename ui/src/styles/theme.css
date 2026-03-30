@@ -1,0 +1,19 @@
+:root {
+  --color-canvas: #f4efe8;
+  --color-surface: #faf7f2;
+  --color-panel: #fffdf9;
+  --color-elevated: #f7f2ea;
+  --color-line: #d9d0c4;
+  --color-ink: #161819;
+  --color-muted: #636c72;
+  --color-accent: #235852;
+  --color-accent-soft: #d9ebe7;
+  --color-accent-strong: #193f3b;
+  --color-success: #2f6d5a;
+  --color-warning: #8a6227;
+  --color-danger: #8c4141;
+  --shadow-soft: 0 16px 48px rgba(24, 32, 34, 0.07);
+  --shadow-card: 0 12px 28px rgba(24, 32, 34, 0.06);
+  --radius-panel: 28px;
+  --radius-card: 22px;
+}

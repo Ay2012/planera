@@ -1,0 +1,69 @@
+@import "./theme.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(35, 88, 82, 0.06), transparent 30%),
+      radial-gradient(circle at top right, rgba(199, 179, 148, 0.1), transparent 26%);
+    min-height: 100vh;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  ::selection {
+    background: rgba(35, 88, 82, 0.16);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight text-ink;
+  }
+
+  button,
+  a,
+  input,
+  textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
+  }
+
+  body.drawer-open {
+    overflow: hidden;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .surface-ring {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+
+  .scroll-fade {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99, 108, 114, 0.5) transparent;
+  }
+
+  .scroll-fade::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scroll-fade::-webkit-scrollbar-thumb {
+    background: rgba(99, 108, 114, 0.35);
+    border-radius: 999px;
+  }
+}
