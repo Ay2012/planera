@@ -19,6 +19,28 @@ function buildUrl(path: string) {
   return `${env.apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+async function buildErrorMessage(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return "API request failed.";
+  }
+
+  try {
+    const payload = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    if (typeof payload.detail === "string") return payload.detail;
+    if (payload.detail && typeof payload.detail === "object" && "message" in payload.detail) {
+      const message = (payload.detail as { message?: unknown }).message;
+      if (typeof message === "string") return message;
+    }
+    if (typeof payload.message === "string") return payload.message;
+  } catch {
+    // Fall through to the raw text body when the response is not JSON.
+  }
+
+  return text;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (isDemoOnlyMode) {
     throw new ApiError("Demo-only mode enabled.");
@@ -36,8 +58,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new ApiError(text || "API request failed.", response.status);
+    throw new ApiError(await buildErrorMessage(response), response.status);
   }
 
   if (options.raw) {

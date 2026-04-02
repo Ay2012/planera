@@ -71,12 +71,12 @@ Core modules:
 - `app/agent/analysis.py`: single-pass narrative from query + steps
 - `app/agent/graph.py`: LangGraph orchestration
 - `app/api/routes.py`: API surface
-- `ui/streamlit_app.py`: demo UI
+- `ui/`: React + Vite frontend
 
 ## Repo Structure
 
 ```text
-gtm-copilot/
+planera/
 ├── app/
 ├── ui/
 ├── data/
@@ -93,7 +93,7 @@ gtm-copilot/
 ### 1. Create the environment
 
 ```bash
-cd gtm-copilot
+cd planera
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -110,6 +110,8 @@ API endpoints:
 
 - `GET /health`
 - `GET /sample-questions`
+- `POST /uploads`
+- `GET /inspections/{inspection_id}`
 - `POST /analyze`
 
 Example request:
@@ -120,29 +122,33 @@ curl -X POST http://localhost:8000/analyze \
   -d '{"query":"Why did pipeline velocity drop this week?"}'
 ```
 
-### 3. Run the Streamlit UI
+### 3. Run the React UI
 
 In a second terminal:
 
 ```bash
-streamlit run ui/streamlit_app.py
+cd ui
+npm install
+npm run dev
 ```
 
 ## Environment Variables
 
-Defined in `.env.example`:
+Backend settings are defined in `.env.example`:
 
 - `APP_NAME`
 - `APP_ENV`
 - `API_HOST`
 - `API_PORT`
-- `STREAMLIT_PORT`
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 - `LOG_LEVEL`
-- `API_BASE_URL`
 
-Set `LLM_PROVIDER` to `openai` or `gemini` and provide the matching API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`). This version does not include a non-LLM fallback path.
+Frontend settings live in `ui/.env.example`.
+
+Set `LLM_PROVIDER` to `openai` or `gemini` and provide the matching API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`).
 
 ## Data Model
 
@@ -195,11 +201,11 @@ docker compose up --build
 Then open:
 
 - API: [http://localhost:8000](http://localhost:8000)
-- UI: [http://localhost:8501](http://localhost:8501)
+- UI: [http://localhost:5173](http://localhost:5173)
 
 ## Demo Script
 
-1. Open the Streamlit UI.
+1. Open the Planera UI.
 2. Select "Why did pipeline velocity drop this week?"
 3. Run the analysis and show the planner-executor loop spinner.
 4. Open the executed-steps panel and show the generated SQL or pandas code.

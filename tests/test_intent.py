@@ -8,7 +8,7 @@ from app.agent.state import create_initial_state
 class FakeLLM:
     """Minimal stub for planner and analysis tests."""
 
-    def generate_json(self, prompt: str):  # noqa: ANN001
+    def generate_json(self, prompt: str, schema=None):  # noqa: ANN001, ARG002
         if '"max_steps": 3' in prompt and "metric_direction" in prompt:
             return {
                 "objective": "Compare current and previous pipeline velocity.",

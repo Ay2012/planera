@@ -29,7 +29,7 @@ export function conversationTitleFromPrompt(prompt: string) {
 }
 
 export function mapAnalyzeResponseToUi(prompt: string, response: AnalyzeApiResponse) {
-  const inspectionId = shortId("inspect");
+  const inspectionId = response.inspection_id ?? shortId("inspect");
   const inspection = buildInspection(inspectionId, prompt, response);
   const payload = buildAssistantPayload(response, inspection);
 

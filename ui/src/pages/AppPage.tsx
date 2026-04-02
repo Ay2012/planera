@@ -14,6 +14,7 @@ import { ErrorState } from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { Spinner } from "@/components/shared/Spinner";
 import { savedAnalyses } from "@/data/mockInsights";
+import { env, isDemoOnlyMode } from "@/config/env";
 import { useChat } from "@/hooks/useChat";
 import { useInspectionPanel } from "@/hooks/useInspectionPanel";
 import { useResponsiveSidebar } from "@/hooks/useResponsiveSidebar";
@@ -34,7 +35,7 @@ const dashboardMetrics = [
 
 export function AppPage() {
   const { isMobile, collapsed, mobileOpen, closeMobileSidebar, toggleSidebar } = useResponsiveSidebar();
-  const { uploads, isUploading, error: uploadError, uploadFile } = useUpload();
+  const { uploads, isUploading, error: uploadError, latestUploadMode, uploadFile } = useUpload();
   const { conversations, activeConversation, activeConversationId, loading, isSubmitting, error, startNewChat, selectConversation, sendPrompt } = useChat();
   const inspection = useInspectionPanel();
   const [draft, setDraft] = useState("");
@@ -55,7 +56,33 @@ export function AppPage() {
     return "Chat with data, inspect the execution path, and keep the technical details one click away.";
   }, [activeSection]);
 
-  const latestUploadLabel = uploads[0] ? `Uploaded ${uploads[0].type}` : undefined;
+  const workspaceStatus = useMemo(() => {
+    const hasAssistantMessage = activeConversation?.messages.some((message) => message.role === "assistant") ?? false;
+    const hasDemoActivity = isDemoOnlyMode || (activeConversation?.mode === "demo" && hasAssistantMessage) || latestUploadMode === "demo";
+    const hasLiveActivity = (activeConversation?.mode === "live" && hasAssistantMessage) || latestUploadMode === "live";
+
+    if (isDemoOnlyMode) {
+      return {
+        connectionLabel: "Demo data source",
+        connectionTone: "warning" as const,
+        modeLabel: "Demo mode",
+        modeTone: "warning" as const,
+      };
+    }
+
+    return {
+      connectionLabel: hasDemoActivity ? "Demo fallback active" : hasLiveActivity ? "Connected backend" : "Backend configured",
+      connectionTone: hasDemoActivity ? ("warning" as const) : hasLiveActivity ? ("accent" as const) : ("neutral" as const),
+      modeLabel: env.apiFallbackMode === "hybrid" ? "Hybrid mode" : "Live mode",
+      modeTone: env.apiFallbackMode === "hybrid" ? ("neutral" as const) : ("success" as const),
+    };
+  }, [activeConversation?.messages, activeConversation?.mode, latestUploadMode]);
+
+  const latestUploadLabel = useMemo(() => {
+    if (!uploads[0]) return undefined;
+    const prefix = latestUploadMode === "demo" ? "Demo" : "Uploaded";
+    return `${prefix} ${uploads[0].type}`;
+  }, [latestUploadMode, uploads]);
 
   const handleSectionChange = (section: SidebarSection) => {
     setActiveSection(section);
@@ -123,11 +150,18 @@ export function AppPage() {
   const uploadsView = (
     <PageContainer className="min-w-0 space-y-6 px-4 py-6 sm:px-6">
       {uploadError ? <ErrorState title="Upload issue" description={uploadError} /> : null}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {uploads.map((asset) => (
-          <UploadCard key={asset.id} asset={asset} />
-        ))}
-      </div>
+      {uploads.length ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {uploads.map((asset) => (
+            <UploadCard key={asset.id} asset={asset} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No uploads yet"
+          description="Upload a CSV or TSV from the chat composer to profile it here and keep the workspace status grounded in real data."
+        />
+      )}
     </PageContainer>
   );
 
@@ -172,7 +206,7 @@ export function AppPage() {
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <InsightCard
               title="Inspection engagement is high"
-              body="Most recent demo runs opened the SQL drawer before the next prompt, which supports Planera’s human-in-the-loop design."
+              body="Recent runs opened the SQL drawer before the next prompt, which supports Planera’s human-in-the-loop design."
               tone="positive"
             />
             <InsightCard
@@ -223,7 +257,10 @@ export function AppPage() {
           title={currentTitle}
           subtitle={currentSubtitle}
           uploadedLabel={latestUploadLabel}
-          demoMode
+          connectionLabel={workspaceStatus.connectionLabel}
+          connectionTone={workspaceStatus.connectionTone}
+          modeLabel={workspaceStatus.modeLabel}
+          modeTone={workspaceStatus.modeTone}
           onToggleSidebar={toggleSidebar}
           showMenuButton={isMobile}
         />

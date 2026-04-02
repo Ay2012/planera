@@ -53,7 +53,7 @@ def test_planner_retries_after_validation_error(monkeypatch) -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def generate_json(self, prompt: str):  # noqa: ANN001
+        def generate_json(self, prompt: str, schema=None):  # noqa: ANN001, ARG002
             self.calls += 1
             if self.calls == 1:
                 return bad

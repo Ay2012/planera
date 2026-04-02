@@ -25,7 +25,7 @@ You are the planning component of a GTM analytics agent.
 Return a single JSON object that describes a full multi-step plan to answer the user's question using only the dataset described below.
 
 Rules:
-- Return JSON only.
+- Follow the response schema exactly.
 - Produce 1 to 3 items in "plan" (at most three SQL steps). Each step must add incremental explanatory value; avoid redundant segmentation.
 - CRITICAL — the "max_steps" field: set it to the integer 3 always. It is the platform's fixed ceiling, not the count of steps you return. Do not set max_steps to 1 or 2 even if the plan has only one or two queries.
 - Every step must use "type": "sql" and put the full SQL statement in "query".
@@ -74,7 +74,7 @@ You are the planning component of a GTM analytics agent. A SQL step from an exis
 Repair the failed step only: return JSON that replaces that step with corrected SQL. Do not add new steps.
 
 Rules:
-- Return JSON only.
+- Follow the response schema exactly.
 - repair_action must be "replace_step".
 - updated_step must use "type": "sql", the same id as the failed step ({failed_step_id}), and a fixed "query".
 - Use only registered view names from the schema manifest.
@@ -112,16 +112,16 @@ def plan_compiled_query(state: AnalysisState) -> AnalysisState:
 
     for attempt in range(1, _COMPILED_PLANNER_ATTEMPTS + 1):
         prompt = _build_compiled_planner_prompt(state, validation_feedback=feedback)
-        decision = client.generate_json(prompt)
         try:
-            parsed = CompiledPlan.model_validate(decision)
-        except ValidationError as exc:
-            feedback = exc.json(indent=2)
+            decision = client.generate_json(prompt, schema=CompiledPlan)
+            parsed = decision if isinstance(decision, CompiledPlan) else CompiledPlan.model_validate(decision)
+        except (ValidationError, ValueError) as exc:
+            feedback = exc.json(indent=2) if isinstance(exc, ValidationError) else str(exc)
             logger.warning(
                 "Compiled plan validation failed (attempt %s/%s): %s",
                 attempt,
                 _COMPILED_PLANNER_ATTEMPTS,
-                exc.errors(),
+                exc.errors() if isinstance(exc, ValidationError) else str(exc),
             )
             if attempt >= _COMPILED_PLANNER_ATTEMPTS:
                 raise
@@ -138,8 +138,11 @@ def plan_compiled_query(state: AnalysisState) -> AnalysisState:
 def repair_failed_step(state: AnalysisState, failed_step_id: str, error_message: str) -> AnalysisState:
     """Call the LLM once to replace a single failed plan step."""
 
-    raw = get_llm_client().generate_json(_build_repair_prompt(state, failed_step_id, error_message))
-    parsed = RepairDecision.model_validate(raw)
+    raw = get_llm_client().generate_json(
+        _build_repair_prompt(state, failed_step_id, error_message),
+        schema=RepairDecision,
+    )
+    parsed = raw if isinstance(raw, RepairDecision) else RepairDecision.model_validate(raw)
 
     if str(parsed.updated_step.id) != str(failed_step_id):
         raise ValueError(f"Repair returned mismatched step id: expected {failed_step_id}, got {parsed.updated_step.id}")

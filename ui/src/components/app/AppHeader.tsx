@@ -5,7 +5,10 @@ interface AppHeaderProps {
   title: string;
   subtitle: string;
   uploadedLabel?: string;
-  demoMode?: boolean;
+  connectionLabel: string;
+  connectionTone?: "neutral" | "accent" | "success" | "warning" | "danger";
+  modeLabel?: string;
+  modeTone?: "neutral" | "accent" | "success" | "warning" | "danger";
   onToggleSidebar: () => void;
   showMenuButton?: boolean;
 }
@@ -14,7 +17,10 @@ export function AppHeader({
   title,
   subtitle,
   uploadedLabel,
-  demoMode = false,
+  connectionLabel,
+  connectionTone = "neutral",
+  modeLabel,
+  modeTone = "neutral",
   onToggleSidebar,
   showMenuButton = false,
 }: AppHeaderProps) {
@@ -42,9 +48,9 @@ export function AppHeader({
           </div>
         </div>
         <div className="flex max-w-full shrink-0 flex-wrap gap-2 xl:max-w-[320px] xl:justify-end">
-          <StatusBadge label="Connected data source" tone="accent" />
+          <StatusBadge label={connectionLabel} tone={connectionTone} />
           {uploadedLabel ? <StatusBadge label={uploadedLabel} tone="success" /> : null}
-          {demoMode ? <StatusBadge label="Demo mode" tone="warning" /> : null}
+          {modeLabel ? <StatusBadge label={modeLabel} tone={modeTone} /> : null}
         </div>
       </div>
     </div>

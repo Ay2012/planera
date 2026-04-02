@@ -32,13 +32,21 @@ cp .env.example .env
 npm run dev
 ```
 
-4. Start the backend API separately on port `8000`
+4. Start the backend API from this repo separately on port `8000`
 
-The current live integration expects the FastAPI backend from [`/Users/ayushgaur/MLH_UV/gtm-copilot`](/Users/ayushgaur/MLH_UV/gtm-copilot) to be running at `http://localhost:8000`.
+The current live integration expects the FastAPI backend in [`/Users/ayushgaur/MLH_UV/planera`](/Users/ayushgaur/MLH_UV/planera) to be running at `http://localhost:8000`.
 
 4. Build for production
 
 ```bash
+npm run build
+```
+
+## Quality Checks
+
+```bash
+npm run lint
+npm run test:run
 npm run build
 ```
 
@@ -106,12 +114,12 @@ The frontend keeps request logic out of presentational components. Update endpoi
 Current live contract:
 
 - `POST /analyze` is used for real chat submissions
+- `POST /uploads` profiles CSV and TSV workspace uploads
+- `GET /inspections/:id` fetches a stored inspection payload when it is not already cached client-side
 - `GET /sample-questions` can be added to the UI later for dynamic prompt suggestions
-- live inspection data is derived from the `/analyze` response and cached client-side for the inspection drawer
 
 Current gaps in the backend contract:
 
-- uploads still fall back to demo behavior unless a real `/uploads` endpoint is added
 - conversation history is currently local/demo until a backend history endpoint is introduced
 
 If you want the frontend to use only real backend data, set:

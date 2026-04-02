@@ -3,15 +3,15 @@ import { cacheInspection } from "@/api/inspections";
 import { conversationTitleFromPrompt, mapAnalyzeResponseToUi } from "@/api/mappers";
 import type { AnalyzeApiRequest, AnalyzeApiResponse, ChatRequest, ChatResponse, ConversationsResponse } from "@/api/types";
 import { seededConversations, buildAssistantMessage } from "@/data/mockChats";
-import { shouldFallbackToDemo } from "@/config/env";
+import { isDemoOnlyMode, shouldFallbackToDemo } from "@/config/env";
 import { shortId, sleep } from "@/lib/utils";
 import type { Conversation } from "@/types/chat";
 
 export async function fetchConversations(): Promise<ConversationsResponse> {
   await sleep(120);
   return {
-    conversations: shouldFallbackToDemo ? seededConversations : [],
-    fallback: shouldFallbackToDemo,
+    conversations: isDemoOnlyMode ? seededConversations : [],
+    fallback: isDemoOnlyMode,
   };
 }
 
@@ -52,8 +52,8 @@ export function createConversationShell(title = "New analysis"): Conversation {
     id: shortId("chat"),
     title,
     updatedAt: new Date().toISOString(),
-    sourceLabel: "Untitled workspace",
-    mode: "demo",
+    sourceLabel: isDemoOnlyMode ? "Demo workspace" : "Workspace session",
+    mode: isDemoOnlyMode ? "demo" : "live",
     messages: [],
   };
 }

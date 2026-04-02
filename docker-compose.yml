@@ -6,19 +6,15 @@ services:
       - .env
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
 
   ui:
-    build: .
-    command: streamlit run ui/streamlit_app.py --server.address 0.0.0.0 --server.port 8501
-    env_file:
-      - .env
-    environment:
-      API_BASE_URL: http://backend:8000
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_FALLBACK_MODE: live
     depends_on:
       - backend
     ports:
-      - "8501:8501"
-    volumes:
-      - .:/app
+      - "5173:5173"
