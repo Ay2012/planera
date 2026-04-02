@@ -3,7 +3,7 @@ export const homeNavLinks = [
   { label: "How it Works", href: "#how-it-works" },
   { label: "Use Cases", href: "#use-cases" },
   { label: "Pricing", href: "#pricing" },
-  { label: "Sign In", href: "/app" },
+  { label: "Sign In", href: "/sign-in" },
 ] as const;
 
 export const promptSuggestions = [

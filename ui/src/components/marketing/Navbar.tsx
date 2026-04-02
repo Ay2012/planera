@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { homeNavLinks } from "@/lib/constants";
@@ -7,6 +7,7 @@ import { classNames } from "@/lib/classNames";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -30,17 +31,39 @@ export function Navbar() {
           </Link>
           <nav className="hidden items-center gap-6 lg:flex">
             {homeNavLinks.map((item) => (
-              <a key={item.label} href={item.href} className="text-sm text-muted transition hover:text-ink">
-                {item.label}
-              </a>
+              item.href.startsWith("/") ? (
+                <Link
+                  key={item.label}
+                  to={item.href}
+                  className={classNames(
+                    "text-sm transition hover:text-ink",
+                    pathname === item.href ? "text-accent-strong" : "text-muted",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <a
+                  key={item.label}
+                  href={pathname === "/" ? item.href : `/${item.href}`}
+                  className="text-sm text-muted transition hover:text-ink"
+                >
+                  {item.label}
+                </a>
+              )
             ))}
             <Link to="/app">
               <Button>Open App</Button>
             </Link>
           </nav>
-          <Link to="/app" className="lg:hidden">
-            <Button size="sm">Open App</Button>
-          </Link>
+          <div className="flex items-center gap-3 lg:hidden">
+            <Link to="/sign-in" className="text-sm text-muted transition hover:text-ink">
+              Sign In
+            </Link>
+            <Link to="/app">
+              <Button size="sm">Open App</Button>
+            </Link>
+          </div>
         </div>
       </PageContainer>
     </header>
