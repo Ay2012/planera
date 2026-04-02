@@ -193,7 +193,7 @@ export function Sidebar(props: SidebarProps) {
     <>
       <aside
         className={classNames(
-          "hidden h-screen shrink-0 overflow-hidden border-r border-line/80 bg-surface/95 lg:flex",
+          "hidden shrink-0 overflow-hidden border-r border-line/80 bg-surface/95 lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start",
           desktopWidth,
         )}
       >
