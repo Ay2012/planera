@@ -38,6 +38,32 @@ const navIcons = {
   dashboards: <path d="M3 3.5H7V8H3V3.5ZM9 3.5H13V6H9V3.5ZM9 8H13V12.5H9V8ZM3 10H7V12.5H3V10Z" />,
 };
 
+function BrandMark({ showExpandCue = false }: { showExpandCue?: boolean }) {
+  return (
+    <div
+      className={classNames(
+        "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-ink text-sm font-semibold text-white shadow-card transition-all duration-300",
+        showExpandCue && "group-hover:shadow-soft",
+      )}
+    >
+      <span className={classNames("relative z-[1] transition-opacity duration-300", showExpandCue && "group-hover:opacity-0")}>P</span>
+      {showExpandCue ? (
+        <>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[2] h-4 w-4 -translate-x-1 text-white opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <path d="M6 3.5L10 8L6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function SidebarContent({
   conversations,
   uploads,
@@ -52,28 +78,37 @@ function SidebarContent({
 }: Omit<SidebarProps, "isMobile" | "mobileOpen" | "onCloseMobile"> & { onAfterSelect?: () => void }) {
   return (
     <div className="flex h-full min-w-0 flex-col gap-5 overflow-hidden p-4">
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <Link to="/" className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ink text-sm font-semibold text-white shadow-card">
-            P
-          </div>
-          {!collapsed ? (
-            <div className="min-w-0">
-              <p className="truncate text-lg font-semibold text-ink">Planera</p>
-              <p className="truncate text-xs tracking-[0.16em] text-muted uppercase">Analytics Copilot</p>
-            </div>
-          ) : null}
-        </Link>
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="hidden h-10 w-10 items-center justify-center rounded-full border border-line bg-panel text-muted transition hover:text-ink lg:inline-flex"
-          aria-label="Collapse sidebar"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none">
-            <path d="M6 3.5L10 8L6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+      <div className={classNames("flex min-w-0 items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="group relative inline-flex h-11 w-11 items-center justify-center rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            aria-label="Expand sidebar"
+          >
+            <BrandMark showExpandCue />
+          </button>
+        ) : (
+          <>
+            <Link to="/" className="flex min-w-0 items-center gap-3">
+              <BrandMark />
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold text-ink">Planera</p>
+                <p className="truncate text-xs tracking-[0.16em] text-muted uppercase">Analytics Copilot</p>
+              </div>
+            </Link>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-line bg-panel text-muted transition-colors duration-300 hover:text-ink lg:inline-flex"
+              aria-label="Collapse sidebar"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none">
+                <path d="M10 3.5L6 8L10 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
 
       <Button fullWidth={!collapsed} className={collapsed ? "h-12 w-12 rounded-2xl px-0" : ""} onClick={() => { onNewChat(); onAfterSelect?.(); }}>
@@ -193,7 +228,7 @@ export function Sidebar(props: SidebarProps) {
     <>
       <aside
         className={classNames(
-          "hidden shrink-0 overflow-hidden border-r border-line/80 bg-surface/95 lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start",
+          "hidden shrink-0 overflow-hidden border-r border-line/80 bg-surface/95 lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start lg:transition-[width] lg:duration-300 lg:ease-in-out motion-reduce:transition-none",
           desktopWidth,
         )}
       >
