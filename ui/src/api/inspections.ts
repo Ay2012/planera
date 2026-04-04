@@ -11,7 +11,8 @@ export function cacheInspection(inspection: InspectionData) {
   inspectionCache.set(inspection.id, inspection);
 }
 
-export async function fetchInspection(inspectionId: string): Promise<InspectionResponse> {
+/** Pass `accessToken` for persisted chat inspections (required after backend restart / cold cache). */
+export async function fetchInspection(inspectionId: string, accessToken: string | null = null): Promise<InspectionResponse> {
   const cachedInspection = inspectionCache.get(inspectionId);
   if (cachedInspection) {
     return {
@@ -28,6 +29,8 @@ export async function fetchInspection(inspectionId: string): Promise<InspectionR
     };
   }
 
-  const response = await request<InspectionResponse>(`/inspections/${inspectionId}`);
+  const response = await request<InspectionResponse>(`/inspections/${inspectionId}`, {
+    authToken: accessToken ?? undefined,
+  });
   return { ...response, fallback: false };
 }

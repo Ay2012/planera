@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 import { fetchInspection } from "@/api/inspections";
+import { useAuth } from "@/hooks/useAuth";
 import type { InspectionData, InspectionTabId } from "@/types/inspection";
 
 export function useInspectionPanel() {
+  const { token } = useAuth();
   const [open, setOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectionTabId>("sql");
@@ -17,7 +19,7 @@ export function useInspectionPanel() {
     setError(null);
 
     try {
-      const response = await fetchInspection(inspectionId);
+      const response = await fetchInspection(inspectionId, token);
       setInspection(response.inspection);
     } catch (err) {
       setInspection(null);
@@ -25,7 +27,7 @@ export function useInspectionPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   return {
     open,

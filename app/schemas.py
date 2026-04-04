@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -207,6 +208,100 @@ class ExecutedStep(BaseModel):
 class AnalyzeResponse(BaseModel):
     """Final API response for a completed analysis run."""
 
+    analysis: str
+    trace: list[TraceEvent]
+    executed_steps: list[ExecutedStep]
+    errors: list[ErrorItem]
+    inspection_id: str | None = None
+
+
+MessageRoleLiteral = Literal["user", "assistant"]
+
+
+class ConversationSummary(BaseModel):
+    """Sidebar-ready conversation row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    updated_at: datetime
+    last_message_preview: str | None = None
+
+
+class ConversationsListResponse(BaseModel):
+    conversations: list[ConversationSummary]
+
+
+class MessagePublic(BaseModel):
+    """One persisted chat message."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: MessageRoleLiteral
+    content: str
+    created_at: datetime
+    metadata_json: dict[str, Any] | None = None
+
+
+class ConversationPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationDetailResponse(BaseModel):
+    """Single conversation with ordered messages."""
+
+    conversation: ConversationPublic
+    messages: list[MessagePublic]
+
+
+class ChatSubmitRequest(BaseModel):
+    """Authenticated chat turn: optional thread id plus user query."""
+
+    conversation_id: int | str | None = None
+    query: str = Field(..., min_length=3)
+
+    @field_validator("conversation_id", mode="before")
+    @classmethod
+    def normalize_conversation_id(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            raise ValueError("conversation_id must be an integer")
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            return int(s)
+        raise ValueError("conversation_id must be an integer or numeric string")
+
+
+class ChatAssistantMessagePublic(BaseModel):
+    """Assistant row returned after a chat turn (persists alongside analysis fields)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: MessageRoleLiteral = "assistant"
+    content: str
+    created_at: datetime
+    status: Literal["ready", "sending", "error"] = "ready"
+    metadata_json: dict[str, Any] | None = None
+
+
+class ChatTurnResponse(BaseModel):
+    """POST /chat response: persisted thread + analysis payload."""
+
+    conversation: ConversationPublic
+    assistant_message: ChatAssistantMessagePublic
     analysis: str
     trace: list[TraceEvent]
     executed_steps: list[ExecutedStep]

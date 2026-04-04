@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth_routes import router as auth_router
+from app.api.chat_routes import router as chat_router
 from app.api.routes import router
 from app.config import get_settings
 from app.utils.logging import configure_logging
@@ -23,7 +24,7 @@ async def lifespan(_app: FastAPI):
 
     from app.db.base import Base
     from app.db.session import get_engine
-    from app.models import User  # noqa: F401
+    from app.models import Conversation, InspectionSnapshot, Message, User  # noqa: F401
 
     Base.metadata.create_all(bind=get_engine())
     yield
@@ -43,4 +44,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router)
+app.include_router(chat_router)
 app.include_router(router)

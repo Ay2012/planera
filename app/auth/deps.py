@@ -44,3 +44,24 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+def get_current_user_optional(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Same as `get_current_user` but returns None when unauthenticated (no 401)."""
+
+    if creds is None or creds.scheme.lower() != "bearer":
+        return None
+    try:
+        payload = decode_access_token(creds.credentials)
+        user_id_str: str | None = payload.get("sub")
+        if user_id_str is None:
+            return None
+        user_id = int(user_id_str)
+    except Exception:
+        return None
+
+    user = db.get(User, user_id)
+    return user

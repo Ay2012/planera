@@ -8,15 +8,28 @@ import type { InspectionTabId } from "@/types/inspection";
 interface ChatThreadProps {
   messages: ChatMessageType[];
   isSubmitting: boolean;
+  /** Loading full thread from the server (e.g. after selecting a saved conversation). */
+  isLoadingThread?: boolean;
   onInspect: (inspectionId: string, preferredTab?: InspectionTabId) => void;
 }
 
-export function ChatThread({ messages, isSubmitting, onInspect }: ChatThreadProps) {
+export function ChatThread({ messages, isSubmitting, isLoadingThread = false, onInspect }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSubmitting]);
+
+  if (isLoadingThread && !messages.length) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="flex items-center gap-3 rounded-full border border-line bg-panel px-4 py-3 text-sm text-muted">
+          <Spinner />
+          Loading conversation…
+        </div>
+      </div>
+    );
+  }
 
   if (!messages.length) {
     return (

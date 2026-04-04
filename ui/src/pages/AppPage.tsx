@@ -36,7 +36,18 @@ const dashboardMetrics = [
 export function AppPage() {
   const { isMobile, collapsed, mobileOpen, closeMobileSidebar, toggleSidebar } = useResponsiveSidebar();
   const { uploads, isUploading, error: uploadError, latestUploadMode, uploadFile } = useUpload();
-  const { conversations, activeConversation, activeConversationId, loading, isSubmitting, error, startNewChat, selectConversation, sendPrompt } = useChat();
+  const {
+    conversations,
+    activeConversation,
+    activeConversationId,
+    loading,
+    threadLoading,
+    isSubmitting,
+    error,
+    startNewChat,
+    selectConversation,
+    sendPrompt,
+  } = useChat();
   const inspection = useInspectionPanel();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<UploadedAsset[]>([]);
@@ -125,6 +136,7 @@ export function AppPage() {
             <ChatThread
               messages={activeConversation?.messages ?? []}
               isSubmitting={isSubmitting}
+              isLoadingThread={threadLoading}
               onInspect={(inspectionId, preferredTab) => void inspection.openInspection(inspectionId, preferredTab)}
             />
           )}
