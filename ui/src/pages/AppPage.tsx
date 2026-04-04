@@ -82,8 +82,8 @@ export function AppPage() {
   };
 
   const chatView = (
-    <div className="flex h-full min-w-0 flex-col overflow-x-hidden">
-      <div className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+      <div className="scroll-fade min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <PageContainer className="max-w-4xl">
           {loading ? (
             <div className="flex items-center justify-center py-24">
