@@ -20,10 +20,11 @@ export async function uploadDataset(file: File): Promise<UploadResponse> {
     return {
       asset: {
         ...createUploadedAsset(file),
+        source: "Demo fallback",
         status: "verified",
         rows: 12840,
         columns: 9,
-        summary: "Demo profiling completed. The uploaded file is ready for natural-language analysis.",
+        summary: "Demo fallback profiling completed. The uploaded file is shown with generated preview statistics.",
       },
       fallback: true,
     };

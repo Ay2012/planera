@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypeVar
 
 from openai import OpenAI
+from pydantic import BaseModel
 
 from app.config import get_settings
-from app.llm.json_response import parse_llm_json_object
+from app.llm.json_response import validate_structured_output
+
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
 class OpenAIClient:
@@ -20,12 +23,14 @@ class OpenAIClient:
         self.model = settings.openai_model
         self.client = OpenAI(api_key=settings.openai_api_key)
 
-    def generate_json(self, prompt: str) -> dict[str, Any]:
-        """Generate JSON and parse the model response."""
+    def generate_json(self, prompt: str, schema: type[SchemaT]) -> SchemaT:
+        """Generate schema-constrained JSON and return a validated model."""
 
-        response = self.client.responses.create(model=self.model, input=prompt)
+        response = self.client.responses.parse(model=self.model, input=prompt, text_format=schema)
+        if response.output_parsed is not None:
+            return validate_structured_output(response.output_parsed, schema=schema, source="openai")
         text = response.output_text or ""
-        return parse_llm_json_object(text, source="openai")
+        return validate_structured_output(text, schema=schema, source="openai")
 
     def generate_text(self, prompt: str) -> str:
         """Generate free text for final user-facing output."""

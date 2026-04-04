@@ -7,10 +7,11 @@ pandas==2.3.2
 duckdb==1.4.0
 pydantic==2.11.7
 pydantic-settings==2.10.1
-streamlit==1.49.1
 requests==2.32.5
 google-genai==1.30.0
 openai==1.107.1
 pytest==8.4.1
 httpx==0.28.1
-
+nodeenv==1.9.1
+python-multipart==0.0.20
+Jinja2==3.1.6

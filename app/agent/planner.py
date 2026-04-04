@@ -3,105 +3,169 @@
 from __future__ import annotations
 
 import json
+import re
+from copy import deepcopy
+from typing import Any
 
 from pydantic import ValidationError
 
+from app.agent.executor import preflight_compiled_plan
 from app.agent.state import AnalysisState
 from app.llm import get_llm_client
+from app.prompts import render_prompt
 from app.schemas import CompiledPlan, RepairDecision
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _COMPILED_PLANNER_ATTEMPTS = 3
+_MAX_PROMPT_RELATIONS = 4
+_MAX_COLUMNS_PER_RELATION = 18
+
+
+def _query_terms(question: str) -> set[str]:
+    return {token.lower() for token in re.findall(r"[a-zA-Z0-9_]+", question) if len(token) >= 3}
+
+
+def _field_terms(*values: str) -> set[str]:
+    terms: set[str] = set()
+    for value in values:
+        normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", value)
+        for token in re.findall(r"[a-zA-Z0-9]+", normalized.lower().replace("_", " ")):
+            if len(token) >= 3:
+                terms.add(token)
+    return terms
+
+
+def _column_relevance_score(column: dict[str, Any], question_terms: set[str]) -> int:
+    column_terms = _field_terms(column.get("name", ""))
+    for hint in column.get("semantic_hints") or []:
+        column_terms.update(_field_terms(hint))
+
+    overlap = len(column_terms & question_terms)
+    score = overlap * 3
+    if column.get("name", "").lower() in question_terms:
+        score += 4
+    return score
+
+
+def _relation_relevance_score(relation: dict[str, Any], question_terms: set[str]) -> int:
+    score = len(_field_terms(relation.get("name", ""), relation.get("grain", "")) & question_terms) * 4
+    score += sum(_column_relevance_score(column, question_terms) for column in relation.get("columns") or [])
+    for mapping in relation.get("semantic_mappings") or []:
+        score += len(_field_terms(mapping.get("concept", "")) & question_terms) * 5
+    return score
+
+
+def _trim_relation_for_prompt(relation: dict[str, Any], question_terms: set[str]) -> dict[str, Any]:
+    trimmed = deepcopy(relation)
+    columns = list(trimmed.get("columns") or [])
+    if len(columns) <= _MAX_COLUMNS_PER_RELATION:
+        return trimmed
+
+    ranked = sorted(
+        columns,
+        key=lambda column: (
+            _column_relevance_score(column, question_terms),
+            column.get("name") in (trimmed.get("identifier_columns") or []),
+            column.get("name") in (trimmed.get("time_columns") or []),
+        ),
+        reverse=True,
+    )
+    selected: list[dict[str, Any]] = []
+    selected_names: set[str] = set()
+    for column in ranked:
+        name = column.get("name", "")
+        if not name or name in selected_names:
+            continue
+        selected.append(column)
+        selected_names.add(name)
+        if len(selected) >= _MAX_COLUMNS_PER_RELATION:
+            break
+
+    trimmed["columns"] = selected
+    trimmed["identifier_columns"] = [name for name in trimmed.get("identifier_columns") or [] if name in selected_names]
+    trimmed["time_columns"] = [name for name in trimmed.get("time_columns") or [] if name in selected_names]
+    trimmed["measure_columns"] = [name for name in trimmed.get("measure_columns") or [] if name in selected_names]
+    trimmed["dimension_columns"] = [name for name in trimmed.get("dimension_columns") or [] if name in selected_names]
+    trimmed["semantic_mappings"] = [
+        mapping
+        for mapping in (trimmed.get("semantic_mappings") or [])
+        if any(name in selected_names for name in mapping.get("columns") or [])
+    ][:12]
+    trimmed["omitted_column_count"] = max(len(columns) - len(selected), 0)
+    return trimmed
+
+
+def _schema_subset_for_question(dataset_context: dict[str, Any], question: str) -> dict[str, Any]:
+    relations = list(dataset_context.get("relations") or [])
+    if not relations:
+        return dataset_context
+
+    total_columns = sum(len(relation.get("columns") or []) for relation in relations)
+    if len(relations) <= _MAX_PROMPT_RELATIONS and total_columns <= (_MAX_PROMPT_RELATIONS * _MAX_COLUMNS_PER_RELATION):
+        return {
+            "reference_date": dataset_context.get("reference_date", ""),
+            "source": dataset_context.get("source", ""),
+            "dialect": dataset_context.get("dialect", ""),
+            "relations": relations,
+        }
+
+    question_terms = _query_terms(question)
+    ranked_relations = sorted(relations, key=lambda relation: _relation_relevance_score(relation, question_terms), reverse=True)
+    selected = ranked_relations[:_MAX_PROMPT_RELATIONS]
+    return {
+        "reference_date": dataset_context.get("reference_date", ""),
+        "source": dataset_context.get("source", ""),
+        "dialect": dataset_context.get("dialect", ""),
+        "relations": [_trim_relation_for_prompt(relation, question_terms) for relation in selected],
+    }
+
+
+def _relation_names(dataset_context: dict[str, Any]) -> list[str]:
+    relations = dataset_context.get("relations") or []
+    if relations:
+        return [relation["name"] for relation in relations]
+    return [view["name"] for view in dataset_context.get("views", [])]
+
+
+def _planner_preflight_feedback(outcome: dict[str, Any], schema_subset: dict[str, Any]) -> str:
+    return (
+        "Your previous plan failed SQL preflight validation.\n"
+        f"Failed step id: {outcome.get('failed_step_id', '')}\n"
+        f"Error: {outcome.get('error', '')}\n"
+        f"SQL:\n{outcome.get('query', '').strip()}\n\n"
+        "Fix guidance:\n"
+        "- Use only exact relation and column names from the schema subset.\n"
+        "- Resolve business-language terms through semantic mappings, then use the mapped exact field names in SQL.\n"
+        "- Do not invent fields or rename columns.\n"
+        "- If the question premise might be wrong, start with an overall comparison before segment-level breakdowns.\n"
+        f"- Target SQL dialect: {schema_subset.get('dialect', '') or 'unknown'}.\n"
+    )
 
 
 def _build_compiled_planner_prompt(state: AnalysisState, validation_feedback: str | None = None) -> str:
-    view_names = [view["name"] for view in state["dataset_context"].get("views", [])]
-
-    prompt = f"""
-You are the planning component of a GTM analytics agent.
-
-Return a single JSON object that describes a full multi-step plan to answer the user's question using only the dataset described below.
-
-Rules:
-- Return JSON only.
-- Produce 1 to 3 items in "plan" (at most three SQL steps). Each step must add incremental explanatory value; avoid redundant segmentation.
-- CRITICAL — the "max_steps" field: set it to the integer 3 always. It is the platform's fixed ceiling, not the count of steps you return. Do not set max_steps to 1 or 2 even if the plan has only one or two queries.
-- Every step must use "type": "sql" and put the full SQL statement in "query".
-- Use only these registered view/table names: {json.dumps(view_names)}
-- Prefer SQL over multiple trivial splits; combine logic when one query suffices.
-- No imports, file I/O, network calls, or plotting.
-- Optional "output_alias" per step for stable names; if omitted, the executor uses `step_<id>`.
-
-Return JSON in this exact shape:
-{{
-  "objective": "string — what the plan will establish end-to-end",
-  "plan": [
-    {{
-      "id": 1,
-      "purpose": "string",
-      "type": "sql",
-      "query": "SQL query string"
-    }}
-  ],
-  "max_steps": 3,
-  "metric": "optional short label for the primary metric, or empty string",
-  "metric_direction": "optional: e.g. higher_is_better or lower_is_better, or empty string"
-}}
-
-User query:
-{state["query"]}
-
-Dataset schema (tables, columns, dtypes, row counts):
-{json.dumps(state["dataset_context"], indent=2)}
-"""
-    if validation_feedback:
-        prompt += f"""
-
-Your previous JSON was rejected by validation. Fix the structure and try again.
-Validation errors:
-{validation_feedback}
-"""
-    return prompt.strip()
+    schema_subset = _schema_subset_for_question(state["dataset_context"], state["query"])
+    relation_names = _relation_names(schema_subset)
+    return render_prompt(
+        "planner_compiled.j2",
+        query=state["query"],
+        relation_names_json=json.dumps(relation_names),
+        schema_subset_json=json.dumps(schema_subset, indent=2),
+        validation_feedback=validation_feedback,
+    )
 
 
 def _build_repair_prompt(state: AnalysisState, failed_step_id: str, error_message: str) -> str:
     plan = state.get("compiled_plan") or {}
-    prompt = f"""
-You are the planning component of a GTM analytics agent. A SQL step from an existing plan failed execution.
-
-Repair the failed step only: return JSON that replaces that step with corrected SQL. Do not add new steps.
-
-Rules:
-- Return JSON only.
-- repair_action must be "replace_step".
-- updated_step must use "type": "sql", the same id as the failed step ({failed_step_id}), and a fixed "query".
-- Use only registered view names from the schema manifest.
-
-Original plan:
-{json.dumps(plan, indent=2)}
-
-Failed step id: {failed_step_id}
-
-Error message:
-{error_message}
-
-Schema manifest:
-{json.dumps(state["dataset_context"], indent=2)}
-
-Return JSON in this shape:
-{{
-  "repair_action": "replace_step",
-  "updated_step": {{
-    "id": <same int as failed step>,
-    "purpose": "string",
-    "type": "sql",
-    "query": "corrected SQL"
-  }}
-}}
-"""
-    return prompt.strip()
+    schema_subset = _schema_subset_for_question(state["dataset_context"], state["query"])
+    return render_prompt(
+        "planner_repair.j2",
+        failed_step_id=failed_step_id,
+        error_message=error_message,
+        plan_json=json.dumps(plan, indent=2),
+        schema_subset_json=json.dumps(schema_subset, indent=2),
+    )
 
 
 def plan_compiled_query(state: AnalysisState) -> AnalysisState:
@@ -112,19 +176,32 @@ def plan_compiled_query(state: AnalysisState) -> AnalysisState:
 
     for attempt in range(1, _COMPILED_PLANNER_ATTEMPTS + 1):
         prompt = _build_compiled_planner_prompt(state, validation_feedback=feedback)
-        decision = client.generate_json(prompt)
         try:
-            parsed = CompiledPlan.model_validate(decision)
-        except ValidationError as exc:
-            feedback = exc.json(indent=2)
+            decision = client.generate_json(prompt, schema=CompiledPlan)
+            parsed = decision if isinstance(decision, CompiledPlan) else CompiledPlan.model_validate(decision)
+        except (ValidationError, ValueError) as exc:
+            feedback = exc.json(indent=2) if isinstance(exc, ValidationError) else str(exc)
             logger.warning(
                 "Compiled plan validation failed (attempt %s/%s): %s",
                 attempt,
                 _COMPILED_PLANNER_ATTEMPTS,
-                exc.errors(),
+                exc.errors() if isinstance(exc, ValidationError) else str(exc),
             )
             if attempt >= _COMPILED_PLANNER_ATTEMPTS:
                 raise
+            continue
+
+        preflight = preflight_compiled_plan(state, parsed.model_dump())
+        if preflight["status"] == "failed":
+            feedback = _planner_preflight_feedback(preflight, _schema_subset_for_question(state["dataset_context"], state["query"]))
+            logger.warning(
+                "Compiled plan preflight failed (attempt %s/%s): %s",
+                attempt,
+                _COMPILED_PLANNER_ATTEMPTS,
+                preflight["error"],
+            )
+            if attempt >= _COMPILED_PLANNER_ATTEMPTS:
+                raise ValueError(preflight["error"])
             continue
 
         state["compiled_plan"] = parsed.model_dump()
@@ -138,8 +215,11 @@ def plan_compiled_query(state: AnalysisState) -> AnalysisState:
 def repair_failed_step(state: AnalysisState, failed_step_id: str, error_message: str) -> AnalysisState:
     """Call the LLM once to replace a single failed plan step."""
 
-    raw = get_llm_client().generate_json(_build_repair_prompt(state, failed_step_id, error_message))
-    parsed = RepairDecision.model_validate(raw)
+    raw = get_llm_client().generate_json(
+        _build_repair_prompt(state, failed_step_id, error_message),
+        schema=RepairDecision,
+    )
+    parsed = raw if isinstance(raw, RepairDecision) else RepairDecision.model_validate(raw)
 
     if str(parsed.updated_step.id) != str(failed_step_id):
         raise ValueError(f"Repair returned mismatched step id: expected {failed_step_id}, got {parsed.updated_step.id}")

@@ -8,7 +8,7 @@ from app.agent.state import create_initial_state
 class FakeLLM:
     """Minimal stub for planner and analysis tests."""
 
-    def generate_json(self, prompt: str):  # noqa: ANN001
+    def generate_json(self, prompt: str, schema=None):  # noqa: ANN001, ARG002
         if '"max_steps": 3' in prompt and "metric_direction" in prompt:
             return {
                 "objective": "Compare current and previous pipeline velocity.",
@@ -25,11 +25,17 @@ class FakeLLM:
                 "metric": "pipeline_velocity",
                 "metric_direction": "lower_is_better",
             }
-        if '"analysis":' in prompt and "markdown" in prompt.lower():
+        if '"analysis_markdown": string' in prompt and "approved claims" in prompt.lower():
             return {
-                "analysis": "## Summary\nPipeline velocity improved from 69.77 to 66.14 days week over week.\n\n**Focus:** Enterprise Stage 2.",
+                "answer_status": "answered",
+                "analysis_markdown": "## Summary\nThe available evidence shows value = 1 for SMB.",
+                "used_claim_ids": ["claim_comparison_result_row_1"],
             }
-        return {"analysis": "Fallback analysis."}
+        return {
+            "answer_status": "insufficient_evidence",
+            "analysis_markdown": "The approved claims are insufficient to answer the question.",
+            "used_claim_ids": [],
+        }
 
 
 def test_planner_returns_compiled_plan(monkeypatch) -> None:
@@ -48,7 +54,21 @@ def test_analysis_narrative_uses_llm(monkeypatch) -> None:
     state = create_initial_state("Why did pipeline velocity drop this week?")
     state["dataset_context"] = {"reference_date": "2017-12-31", "views": []}
     state["compiled_plan"] = {"objective": "Test", "metric": "", "metric_direction": ""}
-    state["executed_steps"] = [{"id": "step_1", "purpose": "Compare", "status": "success", "output_alias": "comparison_result", "artifact": {"row_count": 2}}]
+    state["executed_steps"] = [
+        {
+            "id": "step_1",
+            "purpose": "Compare",
+            "status": "success",
+            "output_alias": "comparison_result",
+            "artifact": {
+                "alias": "comparison_result",
+                "row_count": 1,
+                "columns": ["segment", "value"],
+                "preview_rows": [{"segment": "SMB", "value": 1}],
+                "summary": {},
+            },
+        }
+    ]
     state = run_analysis_narrative(state)
-    assert "Pipeline velocity improved" in state["analysis"]
-    assert "Enterprise" in state["analysis"]
+    assert "value = 1" in state["analysis"]
+    assert "SMB" in state["analysis"]

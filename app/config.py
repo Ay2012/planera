@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    streamlit_port: int = 8501
     data_dir: Path = Field(default=BASE_DIR / "data")
     crm_path: Path = Field(default=BASE_DIR / "data" / "crm.csv")
     subscriptions_path: Path = Field(default=BASE_DIR / "data" / "subscriptions.csv")

@@ -74,4 +74,5 @@ export interface AnalyzeApiResponse {
   trace: AnalyzeTraceEvent[];
   executed_steps: AnalyzeExecutedStep[];
   errors: AnalyzeErrorItem[];
+  inspection_id?: string;
 }
