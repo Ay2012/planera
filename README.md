@@ -128,6 +128,7 @@ In a second terminal:
 
 ```bash
 cd ui
+nodeenv -p --prebuilt    
 npm install
 npm run dev
 ```
