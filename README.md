@@ -100,9 +100,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+Use this project virtualenv for all Python commands (`uvicorn`, `pytest`, `pip`). In each new shell, activate it first:
+
+```bash
+source .venv/bin/activate
+```
+
+*(Windows Git Bash: `source .venv/Scripts/activate` — PowerShell: `.venv\Scripts\Activate.ps1`.)*
+
 ### 2. Run the API
 
 ```bash
+source .venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 

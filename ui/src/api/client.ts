@@ -12,6 +12,10 @@ export class ApiError extends Error {
 
 interface RequestOptions extends RequestInit {
   raw?: boolean;
+  /** When set, sends `Authorization: Bearer <token>`. */
+  authToken?: string | null;
+  /** Auth and health checks may still call the API while `VITE_API_FALLBACK_MODE=demo`. */
+  allowInDemoOnly?: boolean;
 }
 
 function buildUrl(path: string) {
@@ -29,6 +33,17 @@ async function buildErrorMessage(response: Response) {
   try {
     const payload = JSON.parse(text) as { detail?: unknown; message?: unknown };
     if (typeof payload.detail === "string") return payload.detail;
+    if (Array.isArray(payload.detail)) {
+      const messages = payload.detail
+        .map((item) => {
+          if (item && typeof item === "object" && "msg" in item && typeof (item as { msg: unknown }).msg === "string") {
+            return (item as { msg: string }).msg;
+          }
+          return null;
+        })
+        .filter(Boolean);
+      if (messages.length > 0) return dedupeMessages(messages as string[]).join(" ");
+    }
     if (payload.detail && typeof payload.detail === "object" && "message" in payload.detail) {
       const message = (payload.detail as { message?: unknown }).message;
       if (typeof message === "string") return message;
@@ -41,12 +56,20 @@ async function buildErrorMessage(response: Response) {
   return text;
 }
 
+function dedupeMessages(parts: string[]) {
+  return [...new Set(parts.map((p) => p.trim()).filter(Boolean))];
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  if (isDemoOnlyMode) {
+  if (isDemoOnlyMode && !options.allowInDemoOnly) {
     throw new ApiError("Demo-only mode enabled.");
   }
 
   const headers = new Headers(options.headers);
+
+  if (options.authToken) {
+    headers.set("Authorization", `Bearer ${options.authToken}`);
+  }
 
   if (!(options.body instanceof FormData) && !headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
@@ -66,4 +89,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   return (await response.json()) as T;
+}
+
+/** Authenticated request helper — passes `Authorization: Bearer` for you. */
+export function requestWithAuth<T>(path: string, accessToken: string | null, options: RequestOptions = {}): Promise<T> {
+  return request<T>(path, { ...options, authToken: accessToken });
 }
