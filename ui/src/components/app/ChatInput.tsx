@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/shared/Button";
 import { Textarea } from "@/components/shared/Textarea";
 import { PromptChips } from "@/components/app/PromptChips";
@@ -29,6 +29,49 @@ export function ChatInput({
   isUploading,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const syncTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const styles = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+    const verticalSpace =
+      (Number.parseFloat(styles.paddingTop) || 0) +
+      (Number.parseFloat(styles.paddingBottom) || 0) +
+      (Number.parseFloat(styles.borderTopWidth) || 0) +
+      (Number.parseFloat(styles.borderBottomWidth) || 0);
+    const minHeight = lineHeight + verticalSpace;
+    const maxHeight = lineHeight * 5 + verticalSpace;
+
+    textarea.style.height = "0px";
+
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  };
+
+  useLayoutEffect(() => {
+    syncTextareaHeight();
+  }, [value]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === "undefined") return;
+
+    let lastWidth = textarea.getBoundingClientRect().width;
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = entries[0]?.contentRect.width ?? lastWidth;
+      if (Math.abs(nextWidth - lastWidth) < 0.5) return;
+
+      lastWidth = nextWidth;
+      syncTextareaHeight();
+    });
+
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="border-t border-line/80 bg-canvas/90 px-4 py-4 backdrop-blur sm:px-6">
@@ -48,10 +91,12 @@ export function ChatInput({
         ) : null}
         <div className="min-w-0 rounded-[28px] border border-line bg-panel p-3 shadow-card">
           <Textarea
+            ref={textareaRef}
+            rows={1}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             placeholder="Ask a question about your data. Planera will analyze, explain, and show the underlying work."
-            className="min-h-[120px] resize-none border-none p-2 shadow-none focus:border-transparent"
+            className="scroll-fade resize-none border-none p-2 shadow-none outline-none focus:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
