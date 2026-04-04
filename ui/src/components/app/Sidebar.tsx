@@ -77,7 +77,7 @@ function SidebarContent({
   onAfterSelect,
 }: Omit<SidebarProps, "isMobile" | "mobileOpen" | "onCloseMobile"> & { onAfterSelect?: () => void }) {
   return (
-    <div className="flex h-full min-w-0 flex-col gap-5 overflow-hidden p-4">
+    <div className={classNames("flex h-full w-full min-w-0 flex-col gap-5 overflow-hidden", collapsed ? "items-center px-4 py-4" : "p-4")}>
       <div className={classNames("flex min-w-0 items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
         {collapsed ? (
           <button
@@ -111,14 +111,27 @@ function SidebarContent({
         )}
       </div>
 
-      <Button fullWidth={!collapsed} className={collapsed ? "h-12 w-12 rounded-2xl px-0" : ""} onClick={() => { onNewChat(); onAfterSelect?.(); }}>
-        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none">
-          <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <Button
+        fullWidth={!collapsed}
+        className={collapsed ? "!mx-auto !h-12 !w-12 !rounded-2xl !gap-0 !px-0" : ""}
+        onClick={() => { onNewChat(); onAfterSelect?.(); }}
+      >
+        <svg
+          className={classNames("shrink-0", collapsed ? "h-[18px] w-[18px]" : "h-4 w-4")}
+          viewBox={collapsed ? "0 0 18 18" : "0 0 16 16"}
+          fill="none"
+        >
+          <path
+            d={collapsed ? "M9 3.5V14.5M3.5 9H14.5" : "M8 3V13M3 8H13"}
+            stroke="currentColor"
+            strokeWidth={collapsed ? 1.8 : 1.5}
+            strokeLinecap="round"
+          />
         </svg>
         {!collapsed ? "New Chat" : null}
       </Button>
 
-      <div className="space-y-2">
+      <div className={classNames("space-y-2", collapsed && "w-full")}>
         {sidebarNavItems.map((item) => {
           const active = item.id === activeSection;
           return (
@@ -130,7 +143,9 @@ function SidebarContent({
                 onAfterSelect?.();
               }}
               className={classNames(
-                "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition",
+                collapsed
+                  ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 transition"
+                  : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition",
                 active ? "bg-ink text-white shadow-card" : "text-muted hover:bg-panel hover:text-ink",
               )}
             >
@@ -208,8 +223,9 @@ function SidebarContent({
       <Link
         to="/settings"
         className={classNames(
-          "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
-          collapsed && "justify-center",
+          collapsed
+            ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
+            : "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
         )}
       >
         <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -222,7 +238,7 @@ function SidebarContent({
 }
 
 export function Sidebar(props: SidebarProps) {
-  const desktopWidth = props.collapsed ? "lg:w-[92px]" : "lg:w-[320px]";
+  const desktopWidth = props.collapsed ? "lg:w-[84px]" : "lg:w-[320px]";
 
   return (
     <>
