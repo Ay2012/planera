@@ -34,6 +34,14 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"],
         alias="CORS_ALLOW_ORIGINS",
     )
+    # Auth / SQLite (set JWT_SECRET_KEY in any shared or production-like environment)
+    database_path: Path = Field(default=BASE_DIR / "planera.db", alias="DATABASE_PATH")
+    jwt_secret_key: str = Field(
+        default="dev-insecure-jwt-secret-change-me",
+        alias="JWT_SECRET_KEY",
+    )
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_token_expire_minutes: int = Field(default=10080, alias="ACCESS_TOKEN_EXPIRE_MINUTES")  # 7 days
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod

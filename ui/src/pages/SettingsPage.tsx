@@ -4,8 +4,11 @@ import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { env } from "@/config/env";
+import { useAuth } from "@/hooks/useAuth";
 
 export function SettingsPage() {
+  const { user, logout } = useAuth();
+
   return (
     <div className="min-h-screen bg-canvas py-12">
       <PageContainer className="max-w-3xl">
@@ -20,6 +23,19 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-5">
+          <Card className="p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Account</h2>
+                <p className="mt-1 text-sm text-muted">Signed in as {user?.email ?? "—"}</p>
+                {user?.display_name ? <p className="mt-1 text-sm text-muted">Display name: {user.display_name}</p> : null}
+              </div>
+              <Button type="button" variant="secondary" onClick={logout}>
+                Sign out
+              </Button>
+            </div>
+          </Card>
+
           <Card className="p-6">
             <h2 className="text-lg font-semibold text-ink">Workspace details</h2>
             <div className="mt-5 grid gap-4 md:grid-cols-2">

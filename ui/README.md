@@ -4,11 +4,12 @@ Planera is a premium analytics copilot frontend built with React, TypeScript, Vi
 
 This app is designed to work against a separately hosted backend API and includes a dedicated service layer for:
 
+- authentication (JWT session against `POST /auth/login`, `POST /auth/signup`, `GET /auth/me`)
 - chat submission
 - file uploads
 - inspection data
 - validation and trace metadata
-- conversation history
+- conversation history (still mostly local/demo until a history API exists)
 
 When the backend is unavailable, the UI can fall back to seeded demo data so the product remains demo-ready.
 
@@ -32,11 +33,9 @@ cp .env.example .env
 npm run dev
 ```
 
-4. Start the backend API from this repo separately on port `8000`
+4. Start the backend API from the repo root (`../` from this folder) on port `8000` (see root `README.md`: `source .venv/bin/activate` then `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`).
 
-The current live integration expects the FastAPI backend in [`/Users/ayushgaur/MLH_UV/planera`](/Users/ayushgaur/MLH_UV/planera) to be running at `http://localhost:8000`.
-
-4. Build for production
+5. Build for production
 
 ```bash
 npm run build
@@ -67,7 +66,7 @@ VITE_API_FALLBACK_MODE=hybrid
 Fallback modes:
 
 - `hybrid`: try the backend first, then fall back to seeded demo data
-- `demo`: use demo data only
+- `demo`: use demo data only for **analysis/upload** calls; **auth** (`/auth/*`) still hits the API so you can sign in while the rest of the app uses mocks
 - `live`: fail loudly when the backend is unavailable
 
 ## Project Structure
@@ -82,6 +81,7 @@ planera-ui/
 │   │   ├── marketing/
 │   │   └── shared/
 │   ├── config/
+│   ├── context/
 │   ├── data/
 │   ├── hooks/
 │   ├── layouts/
@@ -106,17 +106,25 @@ planera-ui/
 
 The frontend keeps request logic out of presentational components. Update endpoints in the service layer:
 
-- [`src/api/client.ts`](./src/api/client.ts)
+- [`src/api/client.ts`](./src/api/client.ts) — shared `request()` / `requestWithAuth()`; supports `authToken` and FastAPI validation (`422`) error text
+- [`src/api/auth.ts`](./src/api/auth.ts) — login, signup, `/auth/me`
 - [`src/api/chat.ts`](./src/api/chat.ts)
 - [`src/api/uploads.ts`](./src/api/uploads.ts)
 - [`src/api/inspections.ts`](./src/api/inspections.ts)
 
+### Auth session
+
+- [`src/context/AuthProvider.tsx`](./src/context/AuthProvider.tsx) and [`src/hooks/useAuth.ts`](./src/hooks/useAuth.ts) hold the current user and JWT; the token is stored under `planera.accessToken` in `localStorage`.
+- [`src/router/ProtectedRoute.tsx`](./src/router/ProtectedRoute.tsx) guards `/app` and `/settings`; unauthenticated users go to `/sign-in` (with `state.from` for post-login redirect).
+- Sign out clears storage and is available from the workspace sidebar and Settings.
+
 Current live contract:
 
+- `POST /auth/signup`, `POST /auth/login`, `GET /auth/me` — session and route protection
 - `POST /analyze` is used for real chat submissions
 - `POST /uploads` profiles CSV and TSV workspace uploads
 - `GET /inspections/:id` fetches a stored inspection payload when it is not already cached client-side
-- `GET /sample-questions` can be added to the UI later for dynamic prompt suggestions
+- `GET /sample-questions` can be wired for dynamic prompt suggestions
 
 Current gaps in the backend contract:
 

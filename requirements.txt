@@ -15,3 +15,9 @@ httpx==0.28.1
 nodeenv==1.9.1
 python-multipart==0.0.20
 Jinja2==3.1.6
+SQLAlchemy==2.0.41
+passlib[bcrypt]==1.7.4
+# bcrypt 4.1+ dropped __about__.__version__; passlib 1.7.4 still reads it (harmless warning or noisy logs).
+bcrypt>=4.0.1,<4.1
+PyJWT==2.10.1
+email-validator==2.2.0

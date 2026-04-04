@@ -16,6 +16,7 @@ coverage/
 .venv/
 venv/
 __pycache__/
+planera.db
 *.py[cod]
 .pytest_cache/
 .mypy_cache/

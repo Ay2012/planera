@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { Drawer } from "@/components/shared/Drawer";
 import { UploadCard } from "@/components/app/UploadCard";
+import { useAuth } from "@/hooks/useAuth";
 import { sidebarNavItems } from "@/lib/constants";
 import { classNames } from "@/lib/classNames";
 import { formatRelativeTime } from "@/lib/utils";
@@ -76,6 +77,8 @@ function SidebarContent({
   onToggleCollapse,
   onAfterSelect,
 }: Omit<SidebarProps, "isMobile" | "mobileOpen" | "onCloseMobile"> & { onAfterSelect?: () => void }) {
+  const { user, logout } = useAuth();
+
   return (
     <div className={classNames("flex h-full w-full min-w-0 flex-col gap-5 overflow-hidden", collapsed ? "items-center px-4 py-4" : "p-4")}>
       <div className={classNames("flex min-w-0 items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
@@ -219,6 +222,24 @@ function SidebarContent({
           </div>
         </div>
       ) : null}
+
+      {!collapsed && user ? <p className="truncate px-1 text-xs text-muted">{user.email}</p> : null}
+
+      <button
+        type="button"
+        onClick={logout}
+        aria-label="Sign out"
+        className={classNames(
+          collapsed
+            ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
+            : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
+        )}
+      >
+        <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.5 14H3.17A1.67 1.67 0 0 1 1.5 12.33V3.67A1.67 1.67 0 0 1 3.17 2H6.5M10.5 11.33 14 8 10.5 4.67M14 8H6" />
+        </svg>
+        {!collapsed ? "Sign out" : null}
+      </button>
 
       <Link
         to="/settings"

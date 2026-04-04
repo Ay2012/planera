@@ -4,26 +4,41 @@ import { HomePage } from "@/pages/HomePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SignInPage } from "@/pages/SignInPage";
+import { ProtectedRoute } from "@/router/ProtectedRoute";
+import { RootLayout } from "@/router/RootLayout";
 
 export const router = createBrowserRouter([
   {
-    path: "/",
-    element: <HomePage />,
-  },
-  {
-    path: "/app",
-    element: <AppPage />,
-  },
-  {
-    path: "/settings",
-    element: <SettingsPage />,
-  },
-  {
-    path: "/sign-in",
-    element: <SignInPage />,
-  },
-  {
-    path: "*",
-    element: <NotFoundPage />,
+    element: <RootLayout />,
+    children: [
+      {
+        path: "/",
+        element: <HomePage />,
+      },
+      {
+        path: "/sign-in",
+        element: <SignInPage />,
+      },
+      {
+        path: "/app",
+        element: (
+          <ProtectedRoute>
+            <AppPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/settings",
+        element: (
+          <ProtectedRoute>
+            <SettingsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "*",
+        element: <NotFoundPage />,
+      },
+    ],
   },
 ]);
