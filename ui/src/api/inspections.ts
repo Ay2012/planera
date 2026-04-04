@@ -28,10 +28,6 @@ export async function fetchInspection(inspectionId: string): Promise<InspectionR
     };
   }
 
-  try {
-    const response = await request<InspectionResponse>(`/inspections/${inspectionId}`);
-    return { ...response, fallback: false };
-  } catch (error) {
-    throw error;
-  }
+  const response = await request<InspectionResponse>(`/inspections/${inspectionId}`);
+  return { ...response, fallback: false };
 }

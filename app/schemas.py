@@ -80,12 +80,114 @@ class RepairDecision(BaseModel):
     updated_step: CompiledPlanStep
 
 
-class AnalysisNarrativeResponse(BaseModel):
+class SchemaConceptMapping(BaseModel):
+    """Heuristic business-language alias mapped to exact schema fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    concept: str = Field(..., min_length=1)
+    columns: list[str] = Field(default_factory=list)
+    confidence: Literal["heuristic", "explicit"] = "heuristic"
+
+
+class SchemaColumn(BaseModel):
+    """Normalized schema field description used by the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    dtype: str = Field(..., min_length=1)
+    type_family: Literal["string", "number", "boolean", "datetime", "unknown"] = "unknown"
+    semantic_hints: list[str] = Field(default_factory=list)
+
+
+class SchemaRelation(BaseModel):
+    """One normalized table or view available to the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    kind: Literal["table", "view"] = "view"
+    row_count: int = 0
+    grain: str = ""
+    identifier_columns: list[str] = Field(default_factory=list)
+    time_columns: list[str] = Field(default_factory=list)
+    measure_columns: list[str] = Field(default_factory=list)
+    dimension_columns: list[str] = Field(default_factory=list)
+    columns: list[SchemaColumn] = Field(default_factory=list)
+    semantic_mappings: list[SchemaConceptMapping] = Field(default_factory=list)
+
+
+class SchemaManifest(BaseModel):
+    """Source-agnostic schema manifest consumed by the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference_date: str = ""
+    source: str = ""
+    dialect: str = ""
+    relations: list[SchemaRelation] = Field(default_factory=list)
+    views: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class EvidenceValue(BaseModel):
+    """One exact label/value pair carried into the analysis evidence packet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1)
+
+
+class EvidenceItem(BaseModel):
+    """One deterministic evidence row extracted from a successful artifact preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    source_alias: str = Field(..., min_length=1)
+    source_purpose: str = Field(..., min_length=1)
+    row_label: str = Field(..., min_length=1)
+    entities: list[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    values: list[EvidenceValue] = Field(default_factory=list)
+
+
+class AnalysisEvidence(BaseModel):
+    """Compact, domain-agnostic evidence passed into the analysis layer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(..., min_length=1)
+    primary_metric: str = ""
+    metric_direction: str = ""
+    premise_hint: str = ""
+    items: list[EvidenceItem] = Field(default_factory=list)
+    allowed_entities: list[str] = Field(default_factory=list)
+
+
+class ApprovedClaim(BaseModel):
+    """Deterministic claim approved for final narrative rendering."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    kind: Literal["premise_check", "comparison", "row_observation", "caveat"]
+    statement: str = Field(..., min_length=1)
+    entities: list[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
+    values: list[EvidenceValue] = Field(default_factory=list)
+
+
+class AnalysisRenderResponse(BaseModel):
     """Structured LLM output for the final user-facing narrative."""
 
     model_config = ConfigDict(extra="forbid")
 
-    analysis: str = Field(..., min_length=1)
+    answer_status: Literal["answered", "insufficient_evidence", "contradicted_premise", "conflicting_evidence"]
+    analysis_markdown: str = Field(..., min_length=1)
+    used_claim_ids: list[str] = Field(default_factory=list)
 
 
 class ExecutedStep(BaseModel):

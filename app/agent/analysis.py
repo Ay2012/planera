@@ -4,55 +4,60 @@ from __future__ import annotations
 
 import json
 
+from app.agent.analysis_grounding import build_analysis_evidence, build_approved_claims, validate_rendered_analysis
 from app.agent.state import AnalysisState
 from app.llm import get_llm_client
-from app.schemas import AnalysisNarrativeResponse
+from app.prompts import render_prompt
+from app.schemas import AnalysisRenderResponse
+
+_ANALYSIS_RENDER_ATTEMPTS = 2
+
+
+def _build_analysis_render_prompt(
+    question: str,
+    approved_claims_json: str,
+    validation_feedback: str | None = None,
+) -> str:
+    return render_prompt(
+        "analysis_render.j2",
+        question=question,
+        approved_claims_json=approved_claims_json,
+        validation_feedback=validation_feedback,
+    )
 
 
 def run_analysis_narrative(state: AnalysisState) -> AnalysisState:
     """Produce markdown-friendly analysis from query, objective, and step outputs."""
 
-    plan = state.get("compiled_plan") or {}
-    objective = plan.get("objective") or ""
-    metric = plan.get("metric") or state.get("metric") or ""
-    metric_direction = plan.get("metric_direction") or ""
-
     workflow = state.get("workflow_status", "")
-    failure_note = ""
     if workflow in ("planner_failed", "execution_failed"):
-        errs = state.get("errors") or []
-        summary = "; ".join(e.get("message", "") for e in errs[-3:]) if errs else "See trace and errors."
-        failure_note = f"\nWorkflow note: execution did not complete successfully ({workflow}). {summary}\n"
+        state["analysis"] = "The available evidence is insufficient because the workflow did not complete successfully."
+        return state
 
-    prompt = f"""
-You are a GTM analytics analyst. Explain what the data shows in response to the user's question.
+    evidence = build_analysis_evidence(state)
+    approved_claims, expected_status = build_approved_claims(evidence)
+    if not approved_claims:
+        state["analysis"] = "The approved claims are insufficient to answer the question with the available evidence."
+        return state
 
-Rules:
-- Base conclusions only on the executed steps and their artifacts below. Do not invent numbers.
-- If there were no successful steps or data is insufficient, say so clearly.
-- Use markdown: short headings, bullets where helpful.
-- Follow the response schema exactly. The content should match this shape:
-{{ "analysis": "<markdown string>" }}
+    approved_claims_json = json.dumps([claim.model_dump() for claim in approved_claims], indent=2)
+    feedback: str | None = None
 
-User question:
-{state["query"]}
-
-Analytical objective (from planner):
-{objective}
-
-Primary metric (if provided): {metric}
-Metric directionality (if provided): {metric_direction}
-{failure_note}
-Dataset schema (reference):
-{json.dumps(state["dataset_context"], indent=2)}
-
-Executed steps (with previews where available):
-{json.dumps(state["executed_steps"], indent=2)}
-"""
     try:
-        result = get_llm_client().generate_json(prompt, schema=AnalysisNarrativeResponse)
-        parsed = result if isinstance(result, AnalysisNarrativeResponse) else AnalysisNarrativeResponse.model_validate(result)
-        state["analysis"] = parsed.analysis.strip() or "No analysis text was returned."
+        for attempt in range(1, _ANALYSIS_RENDER_ATTEMPTS + 1):
+            prompt = _build_analysis_render_prompt(state["query"], approved_claims_json, validation_feedback=feedback)
+            result = get_llm_client().generate_json(prompt, schema=AnalysisRenderResponse)
+            parsed = result if isinstance(result, AnalysisRenderResponse) else AnalysisRenderResponse.model_validate(result)
+            try:
+                validate_rendered_analysis(parsed, approved_claims, expected_status)
+            except ValueError as exc:
+                feedback = str(exc)
+                if attempt >= _ANALYSIS_RENDER_ATTEMPTS:
+                    raise
+                continue
+
+            state["analysis"] = parsed.analysis_markdown.strip() or "No analysis text was returned."
+            return state
     except Exception as exc:  # pragma: no cover - defensive
         state["analysis"] = (
             f"The analysis step could not complete ({exc!s}). "

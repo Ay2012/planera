@@ -105,6 +105,35 @@ def compiled_plan_row_to_internal(row: dict[str, Any] | CompiledPlanStep) -> dic
     }
 
 
+def preflight_compiled_plan(state: AnalysisState, compiled_plan: dict[str, Any]) -> dict[str, Any]:
+    """
+    Validate compiled SQL steps against the active runtime before execution.
+
+    Steps are checked in order so later queries can reference earlier output aliases.
+    """
+
+    conn = new_duckdb_connection()
+    _register_artifacts(conn, state)
+    rows = list(compiled_plan.get("plan") or [])
+    rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
+
+    for row in rows:
+        internal = compiled_plan_row_to_internal(row)
+        sql = internal["code"].strip().rstrip(";")
+        try:
+            preview = conn.execute(f"SELECT * FROM ({sql}) AS __planera_preflight LIMIT 0").fetchdf()
+            conn.register(internal["output_alias"], preview)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "failed_step_id": internal["id"],
+                "error": str(exc),
+                "query": internal["code"],
+            }
+
+    return {"status": "success"}
+
+
 def _try_sql_step(
     state: AnalysisState,
     internal: dict[str, Any],
