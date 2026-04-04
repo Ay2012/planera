@@ -1,4 +1,11 @@
-import { request, requestWithAuth, ApiError } from "@/api/client";
+/**
+ * Authenticated chat + conversation APIs.
+ *
+ * Real turns use **`POST /chat`** only. Types named `Analyze*` mirror the analysis payload shape
+ * returned inside chat responses (and by the server's stateless `POST /analyze`); this module
+ * does not call `/analyze` for product flows.
+ */
+import { requestWithAuth, ApiError } from "@/api/client";
 import { cacheInspection } from "@/api/inspections";
 import { conversationTitleFromPrompt, mapAnalyzeResponseToUi } from "@/api/mappers";
 import type {

@@ -55,7 +55,12 @@ def inspection_details(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
 ) -> InspectionResponse:
-    """Return a stored inspection (database snapshot for chat history, else in-memory from /analyze)."""
+    """Return inspection detail.
+
+    Prefer rows loaded from ``inspection_snapshots`` (written by ``POST /chat``); those require auth.
+    Otherwise falls back to the in-memory store populated by a stateless ``POST /analyze`` run in
+    the same server process (debug/demo).
+    """
 
     row = db.get(InspectionSnapshot, inspection_id)
     if row is not None:
@@ -80,9 +85,23 @@ def inspection_details(
     return InspectionResponse(inspection=inspection, fallback=False)
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
+@router.post(
+    "/analyze",
+    response_model=AnalyzeResponse,
+    tags=["debug"],
+    deprecated=True,
+    summary="Stateless analysis (debug / manual testing only)",
+    description=(
+        "**Not the primary product API.** For normal use, authenticated clients should call "
+        "`POST /chat`, which persists conversations, messages, and inspection snapshots.\n\n"
+        "This endpoint runs the same analytics pipeline without auth, without database persistence, "
+        "and keeps the inspection payload only in process memory (lost on restart). Use it for "
+        "local debugging, Swagger/Postman checks, and quick stateless demos.\n\n"
+        "Response shape aligns with the analysis/trace/steps portion of `POST /chat`."
+    ),
+)
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    """Execute the analytics workflow for a user query."""
+    """Run analytics without persistence (see OpenAPI ``description`` — prefer ``POST /chat`` for product flows)."""
 
     try:
         return run_stored_analysis(request.query).response

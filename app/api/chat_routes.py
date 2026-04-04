@@ -1,4 +1,9 @@
-"""User-scoped conversation and authenticated chat orchestration."""
+"""User-scoped conversation and authenticated chat orchestration.
+
+This module defines the **primary product HTTP API** for analysis turns: ``POST /chat`` persists
+messages and inspection snapshots. Stateless ``POST /analyze`` (see ``app.api.routes``) exists only
+for debugging and is not a substitute for these routes.
+"""
 
 from __future__ import annotations
 
@@ -102,7 +107,16 @@ def get_conversation(
     )
 
 
-@router.post("/chat", response_model=ChatTurnResponse)
+@router.post(
+    "/chat",
+    response_model=ChatTurnResponse,
+    summary="Submit one chat turn (primary product path)",
+    description=(
+        "Authenticated endpoint: saves the user message, runs the analytics workflow, stores the "
+        "assistant reply and links an inspection snapshot when present. "
+        "Use this for all normal app traffic instead of ``POST /analyze``."
+    ),
+)
 def chat_turn(
     body: ChatSubmitRequest,
     current_user: User = Depends(get_current_user),

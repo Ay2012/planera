@@ -1,3 +1,7 @@
+/**
+ * Maps analysis-shaped JSON (from `POST /chat` or demo mocks) into chat messages and inspection UI state.
+ * Not tied to HTTP `POST /analyze` — that endpoint is server-only debug; the UI uses `/chat`.
+ */
 import type {
   AnalyzeApiResponse,
   AnalyzeArtifactSummary,

@@ -33,8 +33,27 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Natural-language analytics copilot for GTM teams.",
+    description=(
+        "Natural-language analytics copilot for GTM teams.\n\n"
+        "**Primary product API:** `POST /chat` (authenticated) persists conversations, assistant "
+        "replies, and inspection snapshots. **Debug / stateless:** `POST /analyze` is deprecated in "
+        "OpenAPI and reserved for manual testing — same pipeline, no auth and no DB persistence."
+    ),
     lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "chat",
+            "description": "Primary app contract: user-scoped conversations and analysis turns (`POST /chat`, conversation list/detail).",
+        },
+        {
+            "name": "auth",
+            "description": "JWT signup, login, and current user.",
+        },
+        {
+            "name": "debug",
+            "description": "Stateless debugging and local testing (`POST /analyze`). Not equivalent to the persisted chat product path.",
+        },
+    ],
 )
 app.add_middleware(
     CORSMiddleware,

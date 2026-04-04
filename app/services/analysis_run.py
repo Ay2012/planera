@@ -1,4 +1,12 @@
-"""Shared analysis execution + inspection storage (used by /analyze and /chat)."""
+"""Shared analytics workflow invocation and in-process inspection materialization.
+
+``run_stored_analysis`` backs both HTTP entry points:
+
+- **Product:** ``POST /chat`` (auth, SQLite history, persisted inspection snapshots).
+- **Debug:** ``POST /analyze`` (no auth, no DB; inspection id valid only in-memory for that process).
+
+Both return the same ``AnalyzeResponse`` shape for the HTTP layer; only routing and persistence differ.
+"""
 
 from __future__ import annotations
 

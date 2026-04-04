@@ -70,8 +70,16 @@ Core modules:
 - `app/agent/executor.py`: SQL execution engine (pandas helpers retained)
 - `app/agent/analysis.py`: single-pass narrative from query + steps
 - `app/agent/graph.py`: LangGraph orchestration
-- `app/api/routes.py`: API surface
+- `app/api/routes.py`: Shared API surface (health, uploads, inspections, **stateless** `POST /analyze`)
+- `app/api/chat_routes.py`: **Primary product** chat API (`POST /chat`, conversation history)
 - `ui/`: React + Vite frontend
+
+### API: primary chat vs stateless analyze
+
+| Path | Role |
+|------|------|
+| **`POST /chat`** (with JWT) | **Product path:** persists conversations, messages, and inspection snapshots; use for the React app and any integrated client. |
+| **`POST /analyze`** (no auth) | **Debug / manual testing:** same analytics engine, but **no persistence** and inspection data only in server memory until restart. Marked **deprecated** in OpenAPI; do not treat it as a peer to `/chat`. |
 
 ## Repo Structure
 
@@ -121,14 +129,16 @@ API endpoints:
 - `GET /sample-questions`
 - `POST /uploads`
 - `GET /inspections/{inspection_id}`
-- `POST /analyze`
+- **`POST /chat`** — **primary:** authenticated analysis turn; persists thread + inspection snapshot
+- `GET /conversations`, `GET /conversations/{id}` — list/load chat history (authenticated)
+- `POST /analyze` — **deprecated / debug only:** stateless run (see table above)
 - `POST /auth/signup` — create user (SQLite), returns JWT
 - `POST /auth/login` — issue JWT
 - `GET /auth/me` — current user (`Authorization: Bearer <token>`)
 
 **Database:** On API startup the app creates SQLite tables if needed (no separate migration step for this demo). By default the DB file is `planera.db` in the project root (same directory as `requirements.txt`). Override with `DATABASE_PATH` in `.env`. Add a strong `JWT_SECRET_KEY` before any shared deployment; the repo default is for local dev only.
 
-Example request:
+Example (debug — stateless; prefer `/chat` with a JWT for real usage):
 
 ```bash
 curl -X POST http://localhost:8000/analyze \

@@ -31,6 +31,7 @@ export interface InspectionResponse {
   fallback: boolean;
 }
 
+/** Body for the server's stateless `POST /analyze` (debug only — the UI sends `POST /chat` instead). */
 export interface AnalyzeApiRequest {
   query: string;
 }
@@ -69,6 +70,10 @@ export interface AnalyzeExecutedStep {
   error?: string | null;
 }
 
+/**
+ * Analysis payload shape shared by `POST /chat` (and the debug `POST /analyze` response).
+ * Naming reflects backend fields, not a requirement to call `/analyze`.
+ */
 export interface AnalyzeApiResponse {
   analysis: string;
   trace: AnalyzeTraceEvent[];
