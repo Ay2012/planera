@@ -558,7 +558,7 @@ function normalizeCell(value: unknown): string | number | null {
   return JSON.stringify(value);
 }
 
-function formatUnknownValue(value: unknown) {
+function formatUnknownValue(value: unknown): string {
   if (Array.isArray(value)) return value.map((item) => formatUnknownValue(item)).join(", ");
   if (value == null) return "n/a";
   if (typeof value === "object") return JSON.stringify(value);
