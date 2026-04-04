@@ -15,3 +15,8 @@ httpx==0.28.1
 nodeenv==1.9.1
 python-multipart==0.0.20
 Jinja2==3.1.6
+SQLAlchemy==2.0.41
+passlib[bcrypt]==1.7.4
+bcrypt==4.3.0
+PyJWT==2.10.1
+email-validator==2.2.0

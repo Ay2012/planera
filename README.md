@@ -113,6 +113,11 @@ API endpoints:
 - `POST /uploads`
 - `GET /inspections/{inspection_id}`
 - `POST /analyze`
+- `POST /auth/signup` — create user (SQLite), returns JWT
+- `POST /auth/login` — issue JWT
+- `GET /auth/me` — current user (`Authorization: Bearer <token>`)
+
+**Database:** On API startup the app creates SQLite tables if needed (no separate migration step for this demo). By default the DB file is `planera.db` in the project root (same directory as `requirements.txt`). Override with `DATABASE_PATH` in `.env`. Add a strong `JWT_SECRET_KEY` before any shared deployment; the repo default is for local dev only.
 
 Example request:
 
@@ -146,6 +151,10 @@ Backend settings are defined in `.env.example`:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `LOG_LEVEL`
+- `DATABASE_PATH` (optional; default `planera.db` beside `requirements.txt`)
+- `JWT_SECRET_KEY` (optional for local dev; **required** for non-local use)
+- `JWT_ALGORITHM` (default `HS256`)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` (default `10080`)
 
 Frontend settings live in `ui/.env.example`.
 
@@ -181,8 +190,12 @@ Key derived fields include:
 
 ## Running Tests
 
+Use the project virtualenv so `pytest` and packages like `passlib` match `requirements.txt` (if you use Conda/base Python, a bare `pytest` may run the wrong interpreter and fail imports):
+
 ```bash
-pytest
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m pytest
 ```
 
 The test suite covers:
