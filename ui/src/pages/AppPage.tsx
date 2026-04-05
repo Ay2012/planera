@@ -16,13 +16,13 @@ import { Spinner } from "@/components/shared/Spinner";
 import { savedAnalyses } from "@/data/mockInsights";
 import { env, isDemoOnlyMode } from "@/config/env";
 import { useChat } from "@/hooks/useChat";
+import { useActiveUploads } from "@/hooks/useActiveUploads";
 import { useInspectionPanel } from "@/hooks/useInspectionPanel";
 import { useResponsiveSidebar } from "@/hooks/useResponsiveSidebar";
 import { useUpload } from "@/hooks/useUpload";
 import { AppLayout } from "@/layouts/AppLayout";
 import { formatCompactNumber } from "@/lib/utils";
 import { uiStore } from "@/store/uiStore";
-import type { UploadedAsset } from "@/types/upload";
 
 type SidebarSection = "chats" | "uploads" | "saved" | "dashboards";
 
@@ -50,8 +50,8 @@ export function AppPage() {
   } = useChat();
   const inspection = useInspectionPanel();
   const [draft, setDraft] = useState("");
-  const [attachments, setAttachments] = useState<UploadedAsset[]>([]);
   const [activeSection, setActiveSection] = useState<SidebarSection>(() => uiStore.getActiveSection() as SidebarSection);
+  const { activeUploads, removeActiveUpload } = useActiveUploads(uploads);
 
   const currentTitle = useMemo(() => {
     if (activeSection === "uploads") return "Data uploads";
@@ -102,8 +102,7 @@ export function AppPage() {
 
   const handleChatUpload = async (file: File) => {
     try {
-      const asset = await uploadFile(file);
-      setAttachments((current) => [asset, ...current].slice(0, 2));
+      await uploadFile(file);
       handleSectionChange("chats");
     } catch {
       // Upload errors are surfaced through the hook state and UI.
@@ -120,10 +119,9 @@ export function AppPage() {
   };
 
   const handleSubmit = async () => {
-    const success = await sendPrompt(draft, attachments);
+    const success = await sendPrompt(draft, activeUploads);
     if (success) {
       setDraft("");
-      setAttachments([]);
     }
     handleSectionChange("chats");
   };
@@ -160,8 +158,8 @@ export function AppPage() {
           handleSectionChange("chats");
         }}
         onUpload={(file) => void handleChatUpload(file)}
-        onRemoveAttachment={(assetId) => setAttachments((current) => current.filter((asset) => asset.id !== assetId))}
-        attachments={attachments}
+        onRemoveAttachment={removeActiveUpload}
+        attachments={activeUploads}
         isSubmitting={isSubmitting}
         isUploading={isUploading}
       />
