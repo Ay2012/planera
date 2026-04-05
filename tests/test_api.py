@@ -1,6 +1,7 @@
 """API response structure tests."""
 
 from io import BytesIO
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -226,6 +227,87 @@ def test_upload_endpoint_rejects_unsupported_file_types(client: TestClient) -> N
 
     assert response.status_code == 400
     assert response.json()["detail"]["message"] == "Only CSV and JSON uploads are currently supported."
+
+
+def test_upload_endpoint_migrates_legacy_uploads_table(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "legacy_uploads.sqlite"
+    registry_path = tmp_path / "legacy_registry.duckdb"
+    upload_dir = tmp_path / "uploads"
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE uploads (
+            id INTEGER NOT NULL PRIMARY KEY,
+            upload_id VARCHAR(64) NOT NULL,
+            user_id INTEGER NOT NULL,
+            source_id VARCHAR(64) NOT NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            file_type VARCHAR(32) NOT NULL,
+            storage_path VARCHAR(1024) NOT NULL,
+            content_type VARCHAR(255),
+            size_bytes BIGINT NOT NULL,
+            content_hash VARCHAR(64) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            rows INTEGER,
+            columns INTEGER,
+            relation_count INTEGER,
+            primary_relation_name VARCHAR(255),
+            summary TEXT,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO uploads (
+            id, upload_id, user_id, source_id, original_filename, file_type, storage_path, content_type,
+            size_bytes, content_hash, status, rows, columns, relation_count, primary_relation_name, summary,
+            created_at, updated_at
+        ) VALUES (
+            1, 'legacy_upload_1', 999, 'legacy_source_1', 'legacy.csv', 'CSV', '/tmp/legacy.csv', 'text/csv',
+            12, 'abc123', 'verified', 1, 2, 1, 'legacy_relation', 'legacy summary',
+            '2026-04-01 12:00:00', '2026-04-01 12:00:00'
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("REGISTRY_PATH", str(registry_path))
+    monkeypatch.setenv("UPLOAD_STORAGE_DIR", str(upload_dir))
+    get_settings.cache_clear()
+    reset_engine_and_session()
+
+    try:
+        with TestClient(app) as legacy_client:
+            token = _signup(legacy_client, "legacy-migration@example.com")
+            response = legacy_client.post(
+                "/uploads",
+                files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\n"), "text/csv")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            assert response.status_code == 200, response.text
+
+            uploads_response = legacy_client.get("/uploads", headers={"Authorization": f"Bearer {token}"})
+            assert uploads_response.status_code == 200
+            assert len(uploads_response.json()) == 1
+    finally:
+        get_settings.cache_clear()
+        reset_engine_and_session()
+
+    migrated_conn = sqlite3.connect(db_path)
+    columns = [row[1] for row in migrated_conn.execute("PRAGMA table_info(uploads)").fetchall()]
+    source_ids = [row[0] for row in migrated_conn.execute("SELECT source_id FROM uploads ORDER BY source_id").fetchall()]
+    migrated_conn.close()
+
+    assert "upload_id" not in columns
+    assert "file_type" not in columns
+    assert "source_id" in columns
+    assert source_ids == ["legacy_source_1", uploads_response.json()[0]["id"]]
 
 
 def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> None:
