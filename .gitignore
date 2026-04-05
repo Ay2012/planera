@@ -17,6 +17,7 @@ coverage/
 venv/
 __pycache__/
 planera.db
+/data/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
