@@ -15,6 +15,7 @@ from app.schemas import AnalyzeResponse
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "api_test.sqlite"))
+    monkeypatch.setenv("REGISTRY_PATH", str(tmp_path / "api_source_registry.duckdb"))
     get_settings.cache_clear()
     reset_engine_and_session()
     with TestClient(app) as test_client:
@@ -174,6 +175,16 @@ def test_upload_endpoint_profiles_json(client: TestClient) -> None:
     assert payload["asset"]["rows"] == 1
     assert payload["asset"]["relationCount"] == 2
     assert payload["asset"]["primaryRelationName"]
+
+
+def test_upload_endpoint_rejects_unsupported_file_types(client: TestClient) -> None:
+    response = client.post(
+        "/uploads",
+        files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\n"), "text/tab-separated-values")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Only CSV and JSON uploads are currently supported."
 
 
 def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> None:

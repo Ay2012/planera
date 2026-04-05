@@ -9,7 +9,7 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from app.data.registry import ensure_builtin_sources, get_registered_relation_names, get_registry_path, get_schema_manifest, load_relation_frames
+from app.data.registry import get_registered_relation_names, get_registry_path, get_schema_manifest, load_relation_frames
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,6 @@ def _source_ids_key(source_ids: list[str] | tuple[str, ...] | None) -> tuple[str
 
 @lru_cache(maxsize=32)
 def _get_semantic_context_cached(source_ids_key: tuple[str, ...]) -> SemanticContext:
-    ensure_builtin_sources()
     source_ids = list(source_ids_key) if source_ids_key else None
     manifest = get_schema_manifest(source_ids)
     frames = load_relation_frames(source_ids)
@@ -62,7 +61,6 @@ def clear_semantic_context_cache() -> None:
 def new_duckdb_connection(dataset_context: dict[str, Any] | None = None) -> duckdb.DuckDBPyConnection:
     """Create an in-memory DuckDB connection exposing only the requested relations."""
 
-    ensure_builtin_sources()
     relation_names = [
         relation["name"]
         for relation in (dataset_context or {}).get("relations", [])

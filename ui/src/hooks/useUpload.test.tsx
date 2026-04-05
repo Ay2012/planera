@@ -14,12 +14,12 @@ afterEach(() => {
 });
 
 describe("useUpload", () => {
-  it("seeds demo uploads only in demo-only mode", async () => {
+  it("starts with an empty upload list in demo-only mode", async () => {
     const useUpload = await loadUseUpload("demo");
     const { result } = renderHook(() => useUpload());
 
-    expect(result.current.uploads.length).toBeGreaterThan(0);
-    expect(result.current.latestUploadMode).toBe("demo");
+    expect(result.current.uploads).toHaveLength(0);
+    expect(result.current.latestUploadMode).toBeNull();
   });
 
   it("starts with an empty upload list outside demo-only mode", async () => {

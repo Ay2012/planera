@@ -2,22 +2,35 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.agent.planner import _schema_subset_for_question
-from app.data.registry import create_source_link, get_schema_manifest, ingest_source
-from app.data.semantic_model import get_semantic_context
+from app.config import get_settings
+from app.data.registry import clear_source_registry, create_source_link, get_schema_manifest, ingest_source
+from app.data.semantic_model import clear_semantic_context_cache, get_semantic_context
+
+
+@pytest.fixture(autouse=True)
+def isolated_registry(tmp_path, monkeypatch):
+    monkeypatch.setenv("REGISTRY_PATH", str(tmp_path / "source_registry.duckdb"))
+    get_settings.cache_clear()
+    clear_source_registry()
+    clear_semantic_context_cache()
+    yield
+    clear_source_registry()
+    clear_semantic_context_cache()
+    get_settings.cache_clear()
 
 
 def _relation_by_name(manifest: dict, relation_name: str) -> dict:
     return next(relation for relation in manifest["relations"] if relation["name"] == relation_name)
 
 
-def test_registry_manifest_includes_builtin_primary_relation() -> None:
+def test_registry_manifest_starts_empty_without_builtin_sources() -> None:
     manifest = get_schema_manifest()
 
-    relation = _relation_by_name(manifest, "opportunities_enriched")
-    assert relation["source_id"] == "source_builtin_crm"
-    assert relation["is_primary"] is True
-    assert relation["source_name"] == "CRM Sales Opportunities"
+    assert manifest["dialect"] == "duckdb"
+    assert manifest["relations"] == []
 
 
 def test_nested_json_upload_creates_primary_and_child_relations() -> None:
@@ -64,14 +77,16 @@ def test_explicit_source_links_appear_in_manifest() -> None:
 
 
 def test_semantic_context_scopes_to_selected_sources() -> None:
-    asset = ingest_source("inventory.csv", b"sku,stock\nA1,10\nB2,3\n")
+    inventory = ingest_source("inventory.csv", b"sku,stock\nA1,10\nB2,3\n")
+    invoices = ingest_source("invoices.csv", b"invoice_id,amount\ni1,100\ni2,250\n")
 
     full_context = get_semantic_context().schema_manifest
-    scoped_context = get_semantic_context([asset.id]).schema_manifest
+    scoped_context = get_semantic_context([inventory.id]).schema_manifest
 
-    assert any(relation["name"] == "opportunities_enriched" for relation in full_context["relations"])
-    assert not any(relation["name"] == "opportunities_enriched" for relation in scoped_context["relations"])
-    assert any(relation["name"] == asset.primaryRelationName for relation in scoped_context["relations"])
+    assert any(relation["name"] == inventory.primaryRelationName for relation in full_context["relations"])
+    assert any(relation["name"] == invoices.primaryRelationName for relation in full_context["relations"])
+    assert not any(relation["name"] == invoices.primaryRelationName for relation in scoped_context["relations"])
+    assert any(relation["name"] == inventory.primaryRelationName for relation in scoped_context["relations"])
 
 
 def test_schema_subset_prefers_relevant_uploaded_primary_relation() -> None:

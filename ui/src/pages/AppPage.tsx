@@ -5,7 +5,7 @@ import { ChatThread } from "@/components/app/ChatThread";
 import { InspectionPanel } from "@/components/app/InspectionPanel";
 import { InsightCard } from "@/components/app/InsightCard";
 import { Sidebar } from "@/components/app/Sidebar";
-import { UploadCard } from "@/components/app/UploadCard";
+import { UploadsPanel } from "@/components/app/UploadsPanel";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
@@ -100,11 +100,20 @@ export function AppPage() {
     uiStore.setActiveSection(section);
   };
 
-  const handleUpload = async (file: File) => {
+  const handleChatUpload = async (file: File) => {
     try {
       const asset = await uploadFile(file);
       setAttachments((current) => [asset, ...current].slice(0, 2));
       handleSectionChange("chats");
+    } catch {
+      // Upload errors are surfaced through the hook state and UI.
+    }
+  };
+
+  const handleUploadsSectionUpload = async (file: File) => {
+    try {
+      await uploadFile(file);
+      handleSectionChange("uploads");
     } catch {
       // Upload errors are surfaced through the hook state and UI.
     }
@@ -150,7 +159,7 @@ export function AppPage() {
           setDraft(prompt);
           handleSectionChange("chats");
         }}
-        onUpload={(file) => void handleUpload(file)}
+        onUpload={(file) => void handleChatUpload(file)}
         onRemoveAttachment={(assetId) => setAttachments((current) => current.filter((asset) => asset.id !== assetId))}
         attachments={attachments}
         isSubmitting={isSubmitting}
@@ -160,21 +169,7 @@ export function AppPage() {
   );
 
   const uploadsView = (
-    <PageContainer className="min-w-0 space-y-6 px-4 py-6 sm:px-6">
-      {uploadError ? <ErrorState title="Upload issue" description={uploadError} /> : null}
-      {uploads.length ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {uploads.map((asset) => (
-            <UploadCard key={asset.id} asset={asset} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title="No uploads yet"
-          description="Upload a CSV or TSV from the chat composer to profile it here and keep the workspace status grounded in real data."
-        />
-      )}
-    </PageContainer>
+    <UploadsPanel uploads={uploads} error={uploadError} isUploading={isUploading} onUpload={(file) => void handleUploadsSectionUpload(file)} />
   );
 
   const savedView = (

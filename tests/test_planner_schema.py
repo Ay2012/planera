@@ -1,9 +1,25 @@
 """Compiled plan schema and planner retry behavior."""
 
+import pytest
+
 from app.agent.planner import plan_compiled_query
 from app.agent.state import create_initial_state
-from app.data.semantic_model import get_semantic_context
+from app.config import get_settings
+from app.data.registry import clear_source_registry, ingest_source
+from app.data.semantic_model import clear_semantic_context_cache, get_semantic_context
 from app.schemas import CompiledPlan
+
+
+@pytest.fixture(autouse=True)
+def isolated_registry(tmp_path, monkeypatch):
+    monkeypatch.setenv("REGISTRY_PATH", str(tmp_path / "planner_source_registry.duckdb"))
+    get_settings.cache_clear()
+    clear_source_registry()
+    clear_semantic_context_cache()
+    yield
+    clear_source_registry()
+    clear_semantic_context_cache()
+    get_settings.cache_clear()
 
 
 def test_compiled_plan_normalizes_max_steps() -> None:
@@ -64,7 +80,7 @@ def test_planner_retries_after_validation_error(monkeypatch) -> None:
     monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: stub)
 
     state = create_initial_state("Compare segments")
-    state["dataset_context"] = {"reference_date": "2017-12-31", "views": [{"name": "opportunities_enriched"}]}
+    state["dataset_context"] = {"reference_date": "2017-12-31", "relations": [], "views": []}
     state = plan_compiled_query(state)
 
     assert stub.calls == 2
@@ -73,17 +89,20 @@ def test_planner_retries_after_validation_error(monkeypatch) -> None:
 
 
 def test_semantic_context_exposes_normalized_manifest() -> None:
+    asset = ingest_source("pipeline.csv", b"owner,pipeline_velocity_days\nAda,10\nBen,14\n")
     manifest = get_semantic_context().schema_manifest
 
     assert manifest["dialect"] == "duckdb"
     assert manifest["relations"]
-    relation = next(relation for relation in manifest["relations"] if relation["name"] == "opportunities_enriched")
+    relation = next(relation for relation in manifest["relations"] if relation["name"] == asset.primaryRelationName)
     assert relation["columns"]
     assert relation["identifier_columns"]
     assert relation["grain"]
 
 
 def test_planner_retries_after_sql_preflight_failure(monkeypatch) -> None:
+    asset = ingest_source("pipeline.csv", b"owner,pipeline_velocity_days\nAda,10\nBen,14\n")
+    relation_name = asset.primaryRelationName
     bad = {
         "objective": "Analyze by sales agent",
         "plan": [
@@ -91,7 +110,7 @@ def test_planner_retries_after_sql_preflight_failure(monkeypatch) -> None:
                 "id": 1,
                 "purpose": "Break out velocity by agent",
                 "type": "sql",
-                "query": "SELECT sales_agent, AVG(pipeline_velocity_days) AS avg_velocity_days FROM opportunities_enriched GROUP BY sales_agent",
+                "query": f"SELECT sales_agent, AVG(pipeline_velocity_days) AS avg_velocity_days FROM {relation_name} GROUP BY sales_agent",
                 "output_alias": "velocity_by_agent",
             }
         ],
@@ -106,7 +125,7 @@ def test_planner_retries_after_sql_preflight_failure(monkeypatch) -> None:
                 "id": 1,
                 "purpose": "Break out velocity by owner",
                 "type": "sql",
-                "query": "SELECT owner, AVG(pipeline_velocity_days) AS avg_velocity_days FROM opportunities_enriched GROUP BY owner",
+                "query": f"SELECT owner, AVG(pipeline_velocity_days) AS avg_velocity_days FROM {relation_name} GROUP BY owner",
                 "output_alias": "velocity_by_owner",
             }
         ],
@@ -131,7 +150,7 @@ def test_planner_retries_after_sql_preflight_failure(monkeypatch) -> None:
     monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: stub)
 
     state = create_initial_state("Why did pipeline velocity drop this week by sales agent?")
-    state["dataset_context"] = get_semantic_context().schema_manifest
+    state["dataset_context"] = get_semantic_context([asset.id]).schema_manifest
     state = plan_compiled_query(state)
 
     assert stub.calls == 2

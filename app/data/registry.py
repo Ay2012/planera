@@ -16,7 +16,6 @@ import duckdb
 import pandas as pd
 
 from app.config import get_settings
-from app.data.loader import load_data
 from app.schemas import SchemaColumn, SchemaConceptMapping, SchemaJoinKey, SchemaManifest, SchemaRelation, UploadedAsset
 
 
@@ -93,6 +92,10 @@ def get_registry_path() -> Path:
 def _connect_registry(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     path = get_registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if read_only and not path.exists():
+        conn = duckdb.connect(database=str(path), read_only=False)
+        _ensure_registry_tables(conn)
+        return conn
     conn = duckdb.connect(database=str(path), read_only=read_only)
     if not read_only:
         _ensure_registry_tables(conn)
@@ -475,16 +478,12 @@ def _read_uploaded_frame(filename: str, content: bytes) -> pd.DataFrame:
     suffix = Path(filename).suffix.lower()
     buffer = BytesIO(content)
     try:
-        if suffix in {".csv"}:
+        if suffix == ".csv":
             return pd.read_csv(buffer)
-        if suffix in {".tsv", ".tab"}:
-            return pd.read_csv(buffer, sep="\t")
-        if suffix in {".txt"}:
-            return pd.read_csv(buffer, sep=None, engine="python")
     except Exception as exc:  # pragma: no cover - pandas errors vary
         raise ValueError(f"Could not parse {filename} as a structured text dataset.") from exc
 
-    raise ValueError("Only CSV, TSV, TAB, TXT, and JSON uploads are currently supported.")
+    raise ValueError("Only CSV and JSON uploads are currently supported.")
 
 
 def _build_uploaded_asset(package: SourcePackage) -> UploadedAsset:
@@ -889,68 +888,8 @@ def _ingest_json_source(filename: str, content: bytes) -> SourcePackage:
     )
 
 
-def _build_builtin_source_package() -> SourcePackage:
-    bundle = load_data()
-    source_id = "source_builtin_crm"
-    source_name = "CRM Sales Opportunities"
-    relations: list[RelationPackage] = []
-    for relation_name, frame in bundle.raw_views.items():
-        normalized = _coerce_frame_types(_rename_system_columns(frame))
-        relation = _schema_relation_for_frame(
-            relation_name=relation_name,
-            source_id=source_id,
-            source_name=source_name,
-            frame=normalized,
-            kind="view",
-            is_primary=False,
-            parent_relation=None,
-            join_keys=[],
-            lineage={"format": "builtin", "json_path": "$", "reference_date": bundle.reference_date},
-            column_paths={str(column): {"original_name": str(column), "source_path": str(column)} for column in normalized.columns},
-        )
-        relations.append(RelationPackage(relation=relation, frame=normalized))
-
-    semantic_frame = _coerce_frame_types(_ensure_record_id(_rename_system_columns(bundle.crm)))
-    semantic_relation = _schema_relation_for_frame(
-        relation_name="opportunities_enriched",
-        source_id=source_id,
-        source_name=source_name,
-        frame=semantic_frame,
-        kind="view",
-        is_primary=True,
-        parent_relation=None,
-        join_keys=[],
-        lineage={"format": "builtin", "json_path": "$", "reference_date": bundle.reference_date},
-        column_paths={str(column): {"original_name": str(column), "source_path": str(column)} for column in semantic_frame.columns},
-    )
-    relations.append(RelationPackage(relation=semantic_relation, frame=semantic_frame))
-    return SourcePackage(
-        source_id=source_id,
-        source_name=source_name,
-        source_slug="crm_sales_opportunities",
-        source_kind="builtin",
-        source_format="builtin",
-        origin="Planera semantic model",
-        file_name="crm_sales_opportunities",
-        file_type="BUILTIN",
-        size_bytes=0,
-        raw_payload=None,
-        relations=relations,
-        metadata={"reference_date": bundle.reference_date, "source": bundle.source},
-    )
-
-
 def ensure_builtin_sources() -> None:
-    """Seed the registry with the built-in CRM source once."""
-
-    conn = _connect_registry(read_only=False)
-    try:
-        row = conn.execute(f"SELECT COUNT(*) FROM {_SOURCES_TABLE} WHERE source_kind = 'builtin'").fetchone()
-        if row and int(row[0]) > 0:
-            return
-        _persist_source_package(conn, _build_builtin_source_package())
-    finally:
-        conn.close()
+    """Backward-compatible no-op now that uploads are the only runtime data sources."""
 
 
 def ingest_source(filename: str, content: bytes) -> UploadedAsset:
@@ -960,8 +899,10 @@ def ingest_source(filename: str, content: bytes) -> UploadedAsset:
     suffix = Path(safe_name).suffix.lower()
     if suffix == ".json":
         package = _ingest_json_source(safe_name, content)
-    else:
+    elif suffix == ".csv":
         package = _ingest_csv_source(safe_name, content)
+    else:
+        raise ValueError("Only CSV and JSON uploads are currently supported.")
     conn = _connect_registry(read_only=False)
     try:
         _persist_source_package(conn, package)
@@ -981,7 +922,6 @@ def create_source_link(
 ) -> None:
     """Create an explicit registry join path between two existing relations."""
 
-    ensure_builtin_sources()
     conn = _connect_registry(read_only=False)
     try:
         rows = conn.execute(
@@ -1056,7 +996,6 @@ def _load_link_map(conn: duckdb.DuckDBPyConnection, source_ids: list[str] | None
 def get_schema_manifest(source_ids: list[str] | None = None) -> dict[str, Any]:
     """Return the normalized schema manifest for the requested scope."""
 
-    ensure_builtin_sources()
     conn = _connect_registry(read_only=True)
     try:
         filter_sql, params = _source_filter_sql(source_ids)
@@ -1122,10 +1061,8 @@ def get_schema_manifest(source_ids: list[str] | None = None) -> dict[str, Any]:
             )
             relations.append(relation)
 
-        bundle = load_data()
-        reference_date = bundle.reference_date
         manifest = SchemaManifest(
-            reference_date=reference_date,
+            reference_date="",
             source="source_registry",
             dialect="duckdb",
             relations=relations,
@@ -1149,7 +1086,6 @@ def get_schema_manifest(source_ids: list[str] | None = None) -> dict[str, Any]:
 def load_relation_frames(source_ids: list[str] | None = None) -> dict[str, pd.DataFrame]:
     """Load materialized relation tables for the requested scope."""
 
-    ensure_builtin_sources()
     conn = _connect_registry(read_only=True)
     try:
         filter_sql, params = _source_filter_sql(source_ids)
@@ -1168,7 +1104,6 @@ def load_relation_frames(source_ids: list[str] | None = None) -> dict[str, pd.Da
 def get_registered_relation_names(source_ids: list[str] | None = None) -> list[str]:
     """Return visible relation names for the requested scope."""
 
-    ensure_builtin_sources()
     conn = _connect_registry(read_only=True)
     try:
         filter_sql, params = _source_filter_sql(source_ids)

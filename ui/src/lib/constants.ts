@@ -43,7 +43,7 @@ export const homepageFeatureCards = [
   },
   {
     title: "Data upload and profiling",
-    description: "Bring CSV, TSV, and database data into the workflow and see freshness, shape, and quality at a glance.",
+    description: "Bring CSV and JSON data into the workflow and see freshness, shape, and quality at a glance.",
   },
   {
     title: "Execution transparency",
