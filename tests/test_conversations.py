@@ -13,6 +13,8 @@ from app.main import app
 @pytest.fixture
 def chat_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "chat_test.sqlite"))
+    monkeypatch.setenv("REGISTRY_PATH", str(tmp_path / "chat_source_registry.duckdb"))
+    monkeypatch.setenv("UPLOAD_STORAGE_DIR", str(tmp_path / "uploads"))
     get_settings.cache_clear()
     reset_engine_and_session()
     with TestClient(app) as client:
@@ -27,7 +29,7 @@ def _signup(client: TestClient, email: str, password: str = "password123") -> st
     return r.json()["access_token"]
 
 
-def _fake_analysis_state(query: str) -> dict:  # noqa: ARG001
+def _fake_analysis_state(query: str, source_ids=None) -> dict:  # noqa: ARG001
     return {
         "analysis": "## Demo\nHello from fake analysis.\n",
         "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {}}],
@@ -228,3 +230,41 @@ def test_persisted_inspection_forbidden_for_other_user(chat_client: TestClient) 
 
     forbidden = chat_client.get(f"/inspections/{inspection_id}", headers={"Authorization": f"Bearer {intruder}"})
     assert forbidden.status_code == 403
+
+
+def test_chat_rejects_uploads_owned_by_another_user(chat_client: TestClient) -> None:
+    import app.services.analysis_run as analysis_run
+
+    owner = _signup(chat_client, "owner-upload-chat@example.com")
+    intruder = _signup(chat_client, "intruder-upload-chat@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner}"}
+    intruder_headers = {"Authorization": f"Bearer {intruder}"}
+
+    upload_response = chat_client.post(
+        "/uploads",
+        headers=owner_headers,
+        files={"file": ("pipeline.csv", b"stage,amount\nopen,10\nwon,25\n", "text/csv")},
+    )
+    source_id = upload_response.json()["asset"]["id"]
+
+    called = False
+    original = analysis_run.run_analysis
+
+    def fake_run_analysis(query: str, source_ids=None) -> dict:
+        nonlocal called
+        called = True
+        return {"analysis": "", "trace": [], "executed_steps": [], "errors": []}
+
+    analysis_run.run_analysis = fake_run_analysis
+    try:
+        response = chat_client.post(
+            "/chat",
+            headers=intruder_headers,
+            json={"query": "Use another user's upload", "source_ids": [source_id]},
+        )
+    finally:
+        analysis_run.run_analysis = original
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Attach a valid uploaded data source before running analysis."
+    assert called is False

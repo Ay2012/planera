@@ -24,7 +24,7 @@ async def lifespan(_app: FastAPI):
 
     from app.db.base import Base
     from app.db.session import get_engine
-    from app.models import Conversation, InspectionSnapshot, Message, User  # noqa: F401
+    from app.models import Conversation, InspectionSnapshot, Message, UploadRecord, User  # noqa: F401
 
     Base.metadata.create_all(bind=get_engine())
     yield

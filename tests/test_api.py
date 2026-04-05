@@ -16,6 +16,7 @@ from app.schemas import AnalyzeResponse
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "api_test.sqlite"))
     monkeypatch.setenv("REGISTRY_PATH", str(tmp_path / "api_source_registry.duckdb"))
+    monkeypatch.setenv("UPLOAD_STORAGE_DIR", str(tmp_path / "uploads"))
     get_settings.cache_clear()
     reset_engine_and_session()
     with TestClient(app) as test_client:
@@ -62,6 +63,12 @@ def test_sample_questions_endpoint(client: TestClient) -> None:
     assert len(payload["questions"]) >= 3
 
 
+def _signup(client: TestClient, email: str, password: str = "password123") -> str:
+    response = client.post("/auth/signup", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
 def test_analyze_endpoint_structure(client: TestClient) -> None:
     def fake_run_analysis(query: str, source_ids=None) -> dict:  # noqa: ARG001
         return {
@@ -96,12 +103,19 @@ def test_analyze_endpoint_structure(client: TestClient) -> None:
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
+        token = _signup(client, "analyze-structure@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
         upload_response = client.post(
             "/uploads",
             files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+            headers=headers,
         )
         source_id = upload_response.json()["asset"]["id"]
-        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]})
+        response = client.post(
+            "/analyze",
+            json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]},
+            headers=headers,
+        )
     finally:
         analysis_run.run_analysis = original
     assert response.status_code == 200
@@ -122,12 +136,19 @@ def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> Non
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
+        token = _signup(client, "analyze-failure@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
         upload_response = client.post(
             "/uploads",
             files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+            headers=headers,
         )
         source_id = upload_response.json()["asset"]["id"]
-        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]})
+        response = client.post(
+            "/analyze",
+            json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]},
+            headers=headers,
+        )
     finally:
         analysis_run.run_analysis = original
 
@@ -137,10 +158,21 @@ def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> Non
     assert payload["detail"]["error"] == "planner exploded"
 
 
-def test_upload_endpoint_profiles_csv(client: TestClient) -> None:
+def test_upload_endpoint_requires_auth(client: TestClient) -> None:
+    response = client.post(
+        "/uploads",
+        files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\n"), "text/csv")},
+    )
+
+    assert response.status_code == 401
+
+
+def test_upload_endpoint_profiles_csv(client: TestClient, tmp_path) -> None:
+    token = _signup(client, "upload-csv@example.com")
     response = client.post(
         "/uploads",
         files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
@@ -153,9 +185,15 @@ def test_upload_endpoint_profiles_csv(client: TestClient) -> None:
     assert payload["asset"]["status"] == "verified"
     assert payload["asset"]["relationCount"] == 1
     assert payload["asset"]["primaryRelationName"]
+    assert any((tmp_path / "uploads").rglob("original.csv"))
+
+    uploads_response = client.get("/uploads", headers={"Authorization": f"Bearer {token}"})
+    assert uploads_response.status_code == 200
+    assert [asset["id"] for asset in uploads_response.json()] == [payload["asset"]["id"]]
 
 
 def test_upload_endpoint_profiles_json(client: TestClient) -> None:
+    token = _signup(client, "upload-json@example.com")
     response = client.post(
         "/uploads",
         files={
@@ -167,6 +205,7 @@ def test_upload_endpoint_profiles_json(client: TestClient) -> None:
                 "application/json",
             )
         },
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
@@ -178,9 +217,11 @@ def test_upload_endpoint_profiles_json(client: TestClient) -> None:
 
 
 def test_upload_endpoint_rejects_unsupported_file_types(client: TestClient) -> None:
+    token = _signup(client, "upload-unsupported@example.com")
     response = client.post(
         "/uploads",
         files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\n"), "text/tab-separated-values")},
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 400
@@ -220,14 +261,18 @@ def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> No
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
+        token = _signup(client, "inspection@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
         upload_response = client.post(
             "/uploads",
             files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+            headers=headers,
         )
         source_id = upload_response.json()["asset"]["id"]
         analyze_response = client.post(
             "/analyze",
             json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]},
+            headers=headers,
         )
     finally:
         analysis_run.run_analysis = original
@@ -267,12 +312,15 @@ def test_analyze_endpoint_forwards_source_ids(client: TestClient) -> None:
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
+        token = _signup(client, "analyze-forward@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
         upload_response = client.post(
             "/uploads",
             files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+            headers=headers,
         )
         source_id = upload_response.json()["asset"]["id"]
-        response = client.post("/analyze", json={"query": "Use this upload", "source_ids": [source_id]})
+        response = client.post("/analyze", json={"query": "Use this upload", "source_ids": [source_id]}, headers=headers)
     finally:
         analysis_run.run_analysis = original
 
@@ -294,10 +342,59 @@ def test_analyze_endpoint_requires_uploaded_source_before_run_analysis(client: T
 
     analysis_run.run_analysis = fake_run_analysis
     try:
-        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
+        token = _signup(client, "analyze-requires-upload@example.com")
+        response = client.post(
+            "/analyze",
+            json={"query": "Why did pipeline velocity drop this week?"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
     finally:
         analysis_run.run_analysis = original
 
     assert response.status_code == 400
     assert response.json()["detail"]["message"] == "Upload and attach at least one CSV or JSON data source before running analysis."
+    assert called is False
+
+
+def test_uploads_and_analysis_are_scoped_to_the_signed_in_user(client: TestClient) -> None:
+    owner = _signup(client, "owner-uploads@example.com")
+    intruder = _signup(client, "intruder-uploads@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner}"}
+    intruder_headers = {"Authorization": f"Bearer {intruder}"}
+
+    upload_response = client.post(
+        "/uploads",
+        files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        headers=owner_headers,
+    )
+    source_id = upload_response.json()["asset"]["id"]
+
+    owner_list = client.get("/uploads", headers=owner_headers)
+    intruder_list = client.get("/uploads", headers=intruder_headers)
+
+    assert [asset["id"] for asset in owner_list.json()] == [source_id]
+    assert intruder_list.json() == []
+
+    import app.services.analysis_run as analysis_run
+
+    called = False
+    original = analysis_run.run_analysis
+
+    def fake_run_analysis(query: str, source_ids=None) -> dict:
+        nonlocal called
+        called = True
+        return {"analysis": "", "trace": [], "executed_steps": [], "errors": []}
+
+    analysis_run.run_analysis = fake_run_analysis
+    try:
+        forbidden = client.post(
+            "/analyze",
+            json={"query": "Use someone else's upload", "source_ids": [source_id]},
+            headers=intruder_headers,
+        )
+    finally:
+        analysis_run.run_analysis = original
+
+    assert forbidden.status_code == 400
+    assert forbidden.json()["detail"]["message"] == "Attach a valid uploaded data source before running analysis."
     assert called is False

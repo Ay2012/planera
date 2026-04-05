@@ -12,6 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.conversation import Conversation
+    from app.models.upload import UploadRecord
 
 
 def _utc_now() -> datetime:
@@ -29,6 +30,11 @@ class User(Base):
 
     conversations: Mapped[list[Conversation]] = relationship(
         "Conversation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    uploads: Mapped[list[UploadRecord]] = relationship(
+        "UploadRecord",
         back_populates="user",
         cascade="all, delete-orphan",
     )

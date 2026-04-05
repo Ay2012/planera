@@ -606,6 +606,7 @@ def _persist_source_package(conn: duckdb.DuckDBPyConnection, package: SourcePack
         primary = next(item for item in package.relations if item.relation.is_primary)
         row_count = primary.relation.row_count
         content_hash = sha256(package.raw_payload or b"").hexdigest()
+        raw_payload = None if package.source_kind == "upload" else package.raw_payload
         conn.execute(f'DELETE FROM {_SOURCES_TABLE} WHERE source_id = ?', [package.source_id])
         conn.execute(
             f"""
@@ -630,7 +631,7 @@ def _persist_source_package(conn: duckdb.DuckDBPyConnection, package: SourcePack
                 len(package.relations),
                 row_count,
                 "verified",
-                package.raw_payload,
+                raw_payload,
                 json.dumps(package.metadata),
             ],
         )
@@ -649,11 +650,11 @@ def _build_child_relation_name(primary_relation_name: str, path_segments: tuple[
     return f"{primary_relation_name}__{suffix}"
 
 
-def _ingest_csv_source(filename: str, content: bytes) -> SourcePackage:
+def _ingest_csv_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
     safe_name = Path(filename or "upload.csv").name
     frame = _ensure_record_id(_rename_system_columns(_read_uploaded_frame(safe_name, content)))
     frame = _coerce_frame_types(frame)
-    source_id = _short_id("source")
+    source_id = source_id or _short_id("source")
     source_slug = _slugify(Path(safe_name).stem)
     relation_name = _build_primary_relation_name(source_slug, source_id)
     column_paths = {
@@ -690,7 +691,7 @@ def _ingest_csv_source(filename: str, content: bytes) -> SourcePackage:
     )
 
 
-def _ingest_json_source(filename: str, content: bytes) -> SourcePackage:
+def _ingest_json_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
     safe_name = Path(filename or "upload.json").name
     try:
         payload = json.loads(content.decode("utf-8"))
@@ -706,7 +707,7 @@ def _ingest_json_source(filename: str, content: bytes) -> SourcePackage:
     else:
         raise ValueError("JSON uploads must contain a top-level object or an array of objects.")
 
-    source_id = _short_id("source")
+    source_id = source_id or _short_id("source")
     source_slug = _slugify(Path(safe_name).stem)
     primary_relation_name = _build_primary_relation_name(source_slug, source_id)
 
@@ -892,15 +893,15 @@ def ensure_builtin_sources() -> None:
     """Backward-compatible no-op now that uploads are the only runtime data sources."""
 
 
-def ingest_source(filename: str, content: bytes) -> UploadedAsset:
+def ingest_source(filename: str, content: bytes, *, source_id: str | None = None) -> UploadedAsset:
     """Persist a CSV/JSON upload into the registry and return its UI summary."""
 
     safe_name = Path(filename or "upload.csv").name
     suffix = Path(safe_name).suffix.lower()
     if suffix == ".json":
-        package = _ingest_json_source(safe_name, content)
+        package = _ingest_json_source(safe_name, content, source_id=source_id)
     elif suffix == ".csv":
-        package = _ingest_csv_source(safe_name, content)
+        package = _ingest_csv_source(safe_name, content, source_id=source_id)
     else:
         raise ValueError("Only CSV and JSON uploads are currently supported.")
     conn = _connect_registry(read_only=False)
@@ -912,6 +913,37 @@ def ingest_source(filename: str, content: bytes) -> UploadedAsset:
 
     clear_semantic_context_cache()
     return _build_uploaded_asset(package)
+
+
+def delete_source(source_id: str) -> None:
+    """Remove one uploaded source and all of its relations from the registry."""
+
+    conn = _connect_registry(read_only=False)
+    try:
+        relation_names = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT relation_name FROM {_RELATIONS_TABLE} WHERE source_id = ?",
+                [source_id],
+            ).fetchall()
+        ]
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            conn.execute(f"DELETE FROM {_COLUMNS_TABLE} WHERE source_id = ?", [source_id])
+            conn.execute(f"DELETE FROM {_LINKS_TABLE} WHERE left_source_id = ? OR right_source_id = ?", [source_id, source_id])
+            conn.execute(f"DELETE FROM {_RELATIONS_TABLE} WHERE source_id = ?", [source_id])
+            conn.execute(f"DELETE FROM {_SOURCES_TABLE} WHERE source_id = ?", [source_id])
+            for relation_name in relation_names:
+                conn.execute(f'DROP TABLE IF EXISTS "{relation_name}"')
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+    from app.data.semantic_model import clear_semantic_context_cache
+
+    clear_semantic_context_cache()
 
 
 def create_source_link(

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     data_dir: Path = Field(default=BASE_DIR / "data")
     registry_path: Path = Field(default=BASE_DIR / "data" / "source_registry.duckdb")
+    upload_storage_dir: Path = Field(default=BASE_DIR / "data" / "uploads", alias="UPLOAD_STORAGE_DIR")
     crm_path: Path = Field(default=BASE_DIR / "data" / "crm.csv")
     subscriptions_path: Path = Field(default=BASE_DIR / "data" / "subscriptions.csv")
     crm_dataset_dir: Path = Field(default=BASE_DIR / "data" / "CRM+Sales+Opportunities")

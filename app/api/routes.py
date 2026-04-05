@@ -5,16 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.workspace import get_inspection, profile_upload
-from app.auth.deps import get_current_user_optional
+from app.api.workspace import get_inspection
+from app.auth.deps import get_current_user, get_current_user_optional
 from app.config import get_settings
 from app.db.session import get_db
 from app.models.conversation import Conversation
 from app.models.inspection_snapshot import InspectionSnapshot
 from app.models.user import User
-from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionData, InspectionResponse, SampleQuestionsResponse, UploadResponse
+from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionData, InspectionResponse, SampleQuestionsResponse, UploadedAsset, UploadResponse
 from app.services.analysis_run import run_stored_analysis
-from app.data.registry import get_upload_source_ids
+from app.uploads.service import create_user_upload, get_authorized_source_ids, list_user_uploads
 from app.utils.constants import SAMPLE_QUESTIONS
 from app.utils.logging import get_logger
 
@@ -38,13 +38,33 @@ def sample_questions() -> SampleQuestionsResponse:
     return SampleQuestionsResponse(questions=SAMPLE_QUESTIONS)
 
 
+@router.get("/uploads", response_model=list[UploadedAsset])
+def list_uploads(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[UploadedAsset]:
+    """Return uploads owned by the signed-in user."""
+
+    return list_user_uploads(db, current_user)
+
+
 @router.post("/uploads", response_model=UploadResponse)
-async def upload_dataset(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_dataset(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UploadResponse:
     """Accept a workspace upload and return a profiled asset summary."""
 
     contents = await file.read()
     try:
-        asset = profile_upload(file.filename or "upload.csv", contents)
+        asset = create_user_upload(
+            db,
+            current_user,
+            filename=file.filename or "upload.csv",
+            content_type=file.content_type,
+            content=contents,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": str(exc)}) from exc
     return UploadResponse(asset=asset, fallback=False)
@@ -101,7 +121,11 @@ def inspection_details(
         "Response shape aligns with the analysis/trace/steps portion of `POST /chat`."
     ),
 )
-def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
+def analyze(
+    request: AnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AnalyzeResponse:
     """Run analytics without persistence (see OpenAPI ``description`` — prefer ``POST /chat`` for product flows)."""
 
     requested_source_ids = list(dict.fromkeys(request.source_ids or []))
@@ -111,7 +135,7 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
             detail={"message": "Upload and attach at least one CSV or JSON data source before running analysis."},
         )
 
-    valid_source_ids = get_upload_source_ids(requested_source_ids)
+    valid_source_ids = get_authorized_source_ids(db, current_user, requested_source_ids)
     if len(valid_source_ids) != len(requested_source_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

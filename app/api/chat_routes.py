@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.config import get_settings
-from app.data.registry import get_upload_source_ids
 from app.db.session import get_db
 from app.models.conversation import Conversation, Message
 from app.models.user import User
@@ -31,6 +30,7 @@ from app.schemas import (
 )
 from app.services.analysis_run import run_stored_analysis
 from app.services.inspection_persistence import save_inspection_for_assistant_message
+from app.uploads.service import get_authorized_source_ids
 from app.utils.logging import get_logger
 
 
@@ -149,7 +149,7 @@ def chat_turn(
 
     requested_source_ids = list(dict.fromkeys(body.source_ids or []))
     if requested_source_ids:
-        valid_source_ids = get_upload_source_ids(requested_source_ids)
+        valid_source_ids = get_authorized_source_ids(db, current_user, requested_source_ids)
         if len(valid_source_ids) != len(requested_source_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
