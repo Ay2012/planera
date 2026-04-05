@@ -25,19 +25,19 @@ _MAX_COLUMNS_PER_RELATION = 18
 _PREMISE_TERMS = ("drop", "decline", "decrease", "increase", "improve", "growth", "faster", "slower")
 
 
-def _canonicalize_step_contract(step: Any) -> Any:
+def _canonicalize_step_contract(step: Any, dataset_context: dict[str, Any]) -> Any:
     """Normalize metric aliases in a compiled or repaired step."""
 
-    step.query = canonicalize_sql_metric_aliases(step.query)
-    step.expectation.expected_metric_columns = canonical_metric_aliases(step.expectation.expected_metric_columns)
+    step.query = canonicalize_sql_metric_aliases(step.query, dataset_context)
+    step.expectation.expected_metric_columns = canonical_metric_aliases(step.expectation.expected_metric_columns, dataset_context)
     return step
 
 
-def _canonicalize_plan_contract(parsed: CompiledPlan) -> CompiledPlan:
+def _canonicalize_plan_contract(parsed: CompiledPlan, dataset_context: dict[str, Any]) -> CompiledPlan:
     """Normalize metric aliases in the planner output before validation/execution."""
 
-    parsed.metric = canonical_metric_alias(parsed.metric)
-    parsed.plan = [_canonicalize_step_contract(step) for step in parsed.plan]
+    parsed.metric = canonical_metric_alias(parsed.metric, dataset_context)
+    parsed.plan = [_canonicalize_step_contract(step, dataset_context) for step in parsed.plan]
     return parsed
 
 
@@ -287,7 +287,7 @@ def plan_compiled_query(state: AnalysisState) -> AnalysisState:
         try:
             decision = client.generate_json(prompt, schema=CompiledPlan)
             parsed = decision if isinstance(decision, CompiledPlan) else CompiledPlan.model_validate(decision)
-            parsed = _canonicalize_plan_contract(parsed)
+            parsed = _canonicalize_plan_contract(parsed, state["dataset_context"])
         except (ValidationError, ValueError) as exc:
             feedback = exc.json(indent=2) if isinstance(exc, ValidationError) else str(exc)
             logger.warning(
@@ -342,7 +342,7 @@ def repair_failed_step(state: AnalysisState, failed_step_id: str, error_message:
         schema=RepairDecision,
     )
     parsed = raw if isinstance(raw, RepairDecision) else RepairDecision.model_validate(raw)
-    parsed.updated_step = _canonicalize_step_contract(parsed.updated_step)
+    parsed.updated_step = _canonicalize_step_contract(parsed.updated_step, state["dataset_context"])
 
     if str(parsed.updated_step.id) != str(failed_step_id):
         raise ValueError(f"Repair returned mismatched step id: expected {failed_step_id}, got {parsed.updated_step.id}")

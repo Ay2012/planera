@@ -11,6 +11,7 @@ Rules:
 - Preserve the original comparison logic, grouping logic, population/filter logic, output shape, period logic, and minimum row requirements.
 - Preserve the required metric columns from the original expectation block.
 - Preserve any distinct-period requirement from the original expectation block.
+- When the repaired SQL aliases an aggregate metric, use the canonical form `<aggregate>_<exact_source_metric_column>`.
 - Do not replace an invalid identifier with a semantically unrelated valid column.
 - If the schema mapping does not justify a replacement, prefer a simpler valid query over a misleading one.
 - Keep the original step expectation block unchanged.

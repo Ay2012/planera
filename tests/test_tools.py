@@ -197,10 +197,13 @@ def test_execute_single_step_accepts_canonical_metric_alias_for_pipeline_velocit
         "purpose": "Compare average pipeline velocity by period.",
         "type": "sql",
         "query": (
-            "SELECT * FROM ("
-            "SELECT 'previous_week' AS period, 69.94 AS avg_pipeline_velocity "
-            "UNION ALL SELECT 'current_week' AS period, 64.13 AS avg_pipeline_velocity"
-            ")"
+            "SELECT "
+            "CASE WHEN current_period = TRUE THEN 'current_week' "
+            "WHEN previous_period = TRUE THEN 'previous_week' END AS period, "
+            "AVG(pipeline_velocity_days) AS avg_pipeline_velocity "
+            "FROM opportunities_enriched "
+            "WHERE current_period = TRUE OR previous_period = TRUE "
+            "GROUP BY 1 ORDER BY 1"
         ),
         "expectation": {
             "step_category": "premise_check",

@@ -88,7 +88,10 @@ def _empty_table_failure(artifact: ArtifactSummary) -> bool:
     return artifact.artifact_type == "table" and artifact.row_count == 0
 
 
-def compiled_plan_row_to_internal(row: dict[str, Any] | CompiledPlanStep) -> dict[str, Any]:
+def compiled_plan_row_to_internal(
+    row: dict[str, Any] | CompiledPlanStep,
+    dataset_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Map a compiled plan step to the executor shape used by `_execute_sql`."""
 
     if isinstance(row, CompiledPlanStep):
@@ -96,13 +99,14 @@ def compiled_plan_row_to_internal(row: dict[str, Any] | CompiledPlanStep) -> dic
     sid = row["id"]
     alias = row.get("output_alias") or f"step_{sid}"
     expectation = _as_expectation(row["expectation"])
-    expectation.expected_metric_columns = canonical_metric_aliases(expectation.expected_metric_columns)
+    expectation.expected_metric_columns = canonical_metric_aliases(expectation.expected_metric_columns, dataset_context)
     return {
         "id": str(sid),
         "kind": "sql",
         "purpose": row["purpose"],
-        "code": canonicalize_sql_metric_aliases(row["query"]),
+        "code": canonicalize_sql_metric_aliases(row["query"], dataset_context),
         "expectation": expectation,
+        "dataset_context": dataset_context,
         "output_alias": alias,
     }
 
@@ -113,11 +117,15 @@ def _as_expectation(value: dict[str, Any] | StepExpectation) -> StepExpectation:
     return StepExpectation.model_validate(value)
 
 
-def _missing_expected_columns(columns: list[str], expectation: StepExpectation) -> list[str]:
-    present = {canonical_metric_alias(column) for column in columns}
+def _missing_expected_columns(
+    columns: list[str],
+    expectation: StepExpectation,
+    dataset_context: dict[str, Any] | None = None,
+) -> list[str]:
+    present = {canonical_metric_alias(column, dataset_context) for column in columns}
     expected_columns = [
         *expectation.expected_grouping_columns,
-        *canonical_metric_aliases(expectation.expected_metric_columns),
+        *canonical_metric_aliases(expectation.expected_metric_columns, dataset_context),
         *( [expectation.expected_period_column] if expectation.expected_period_column else [] ),
     ]
     seen: set[str] = set()
@@ -171,6 +179,7 @@ def _validate_step_expectation(expectation: StepExpectation) -> str | None:
 def _validate_preview_shape(
     internal: dict[str, Any],
     preview_columns: list[str],
+    dataset_context: dict[str, Any] | None = None,
     original_expectation: StepExpectation | None = None,
 ) -> str | None:
     expectation = _as_expectation(internal["expectation"])
@@ -180,7 +189,7 @@ def _validate_preview_shape(
     if expectation_error:
         return expectation_error
 
-    missing = _missing_expected_columns(preview_columns, expectation)
+    missing = _missing_expected_columns(preview_columns, expectation, dataset_context)
     if missing:
         return f"The step preview is missing expected columns: {', '.join(missing)}."
     return None
@@ -188,6 +197,7 @@ def _validate_preview_shape(
 
 def _validate_result_shape(frame: pd.DataFrame, internal: dict[str, Any]) -> tuple[str, str | None]:
     expectation = _as_expectation(internal["expectation"])
+    dataset_context = internal.get("dataset_context")
     frame = _normalized_validation_frame(frame)
     expectation_error = _validate_step_expectation(expectation)
     if expectation_error:
@@ -196,7 +206,7 @@ def _validate_result_shape(frame: pd.DataFrame, internal: dict[str, Any]) -> tup
     if frame.empty:
         return "invalid", "The step returned no rows."
 
-    missing = _missing_expected_columns(list(frame.columns), expectation)
+    missing = _missing_expected_columns(list(frame.columns), expectation, dataset_context)
     if missing:
         return "invalid", f"The result is missing expected columns: {', '.join(missing)}."
 
@@ -239,12 +249,12 @@ def preflight_compiled_plan(state: AnalysisState, compiled_plan: dict[str, Any])
     previews: list[dict[str, Any]] = []
 
     for row in rows:
-        internal = compiled_plan_row_to_internal(row)
+        internal = compiled_plan_row_to_internal(row, state.get("dataset_context"))
         sql = internal["code"].strip().rstrip(";")
         try:
             preview = conn.execute(f"SELECT * FROM ({sql}) AS __planera_preflight LIMIT 0").fetchdf()
             preview_columns = list(preview.columns)
-            validation_reason = _validate_preview_shape(internal, preview_columns)
+            validation_reason = _validate_preview_shape(internal, preview_columns, state.get("dataset_context"))
             if validation_reason:
                 return {
                     "status": "failed",
@@ -359,7 +369,7 @@ def execute_plan(state: AnalysisState, compiled_plan: dict[str, Any]) -> dict[st
     rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
 
     for row in rows:
-        internal = compiled_plan_row_to_internal(row)
+        internal = compiled_plan_row_to_internal(row, state.get("dataset_context"))
         status, _ = _try_sql_step(state, internal, attempt=1)
         if status in {"failed", "invalid"}:
             sid = internal["id"]
@@ -379,7 +389,7 @@ def execute_single_plan_step(
 ) -> dict[str, Any]:
     """Re-run a single compiled step (e.g. after repair)."""
 
-    internal = compiled_plan_row_to_internal(compiled_step)
+    internal = compiled_plan_row_to_internal(compiled_step, state.get("dataset_context"))
     status, _ = _try_sql_step(state, internal, attempt=attempt)
     if status in {"failed", "invalid"}:
         return {

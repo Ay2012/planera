@@ -14,6 +14,7 @@ Rules:
 - Later steps may investigate grounded breakdowns only if they add distinct explanatory value beyond Step 1.
 - If the schema subset does not support a requested entity or dimension, do not guess a substitute. Fall back to a simpler grounded query.
 - Maintain consistent aggregation grain between comparable rows and periods.
+- When you alias an aggregate metric in SQL, use the canonical form `<aggregate>_<exact_source_metric_column>` such as `avg_pipeline_velocity_days`.
 - No imports, file I/O, network calls, or plotting.
 - Optional "output_alias" per step for stable names; if omitted, the executor uses `step_<id>`.
 
