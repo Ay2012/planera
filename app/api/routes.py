@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.workspace import get_inspection
@@ -14,7 +14,7 @@ from app.models.inspection_snapshot import InspectionSnapshot
 from app.models.user import User
 from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionData, InspectionResponse, SampleQuestionsResponse, UploadedAsset, UploadResponse
 from app.services.analysis_run import run_stored_analysis
-from app.uploads.service import create_user_upload, get_authorized_source_ids, list_user_uploads
+from app.uploads.service import create_user_upload, delete_user_upload, get_authorized_source_ids, list_user_uploads
 from app.utils.constants import SAMPLE_QUESTIONS
 from app.utils.logging import get_logger
 
@@ -70,6 +70,20 @@ async def upload_dataset(
     return UploadResponse(asset=asset, fallback=False)
 
 
+@router.delete("/uploads/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_upload(
+    source_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Delete one upload owned by the signed-in user."""
+
+    deleted = delete_user_upload(db, current_user, source_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"message": "Upload not found."})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/inspections/{inspection_id}", response_model=InspectionResponse)
 def inspection_details(
     inspection_id: str,
@@ -115,7 +129,7 @@ def inspection_details(
     description=(
         "**Not the primary product API.** For normal use, authenticated clients should call "
         "`POST /chat`, which persists conversations, messages, and inspection snapshots.\n\n"
-        "This endpoint runs the same analytics pipeline without auth, without database persistence, "
+        "This endpoint runs the same analytics pipeline with auth but without conversation/database persistence, "
         "and keeps the inspection payload only in process memory (lost on restart). Use it for "
         "local debugging, Swagger/Postman checks, and quick stateless demos.\n\n"
         "Response shape aligns with the analysis/trace/steps portion of `POST /chat`."
@@ -126,7 +140,7 @@ def analyze(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
-    """Run analytics without persistence (see OpenAPI ``description`` — prefer ``POST /chat`` for product flows)."""
+    """Run analytics with auth but without persistence (see OpenAPI ``description`` — prefer ``POST /chat``)."""
 
     requested_source_ids = list(dict.fromkeys(request.source_ids or []))
     if not requested_source_ids:

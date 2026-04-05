@@ -35,7 +35,15 @@ const dashboardMetrics = [
 
 export function AppPage() {
   const { isMobile, collapsed, mobileOpen, closeMobileSidebar, toggleSidebar } = useResponsiveSidebar();
-  const { uploads, isUploading, error: uploadError, latestUploadMode, uploadFile } = useUpload();
+  const {
+    uploads,
+    isUploading,
+    deletingUploadId,
+    error: uploadError,
+    latestUploadMode,
+    uploadFile,
+    deleteUpload,
+  } = useUpload();
   const {
     conversations,
     activeConversation,
@@ -167,7 +175,14 @@ export function AppPage() {
   );
 
   const uploadsView = (
-    <UploadsPanel uploads={uploads} error={uploadError} isUploading={isUploading} onUpload={(file) => void handleUploadsSectionUpload(file)} />
+    <UploadsPanel
+      uploads={uploads}
+      error={uploadError}
+      isUploading={isUploading}
+      deletingUploadId={deletingUploadId}
+      onUpload={(file) => void handleUploadsSectionUpload(file)}
+      onDelete={(assetId) => void deleteUpload(assetId)}
+    />
   );
 
   const savedView = (
@@ -236,7 +251,6 @@ export function AppPage() {
       sidebar={
         <Sidebar
           conversations={conversations}
-          uploads={uploads}
           activeSection={activeSection}
           activeConversationId={activeConversationId}
           collapsed={collapsed}

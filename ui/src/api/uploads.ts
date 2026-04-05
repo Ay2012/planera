@@ -29,3 +29,14 @@ export async function uploadDataset(file: File, accessToken: string | null): Pro
   });
   return { ...response, fallback: false };
 }
+
+
+export async function deleteUpload(sourceId: string, accessToken: string | null): Promise<void> {
+  if (!accessToken) {
+    throw new ApiError("Not authenticated.");
+  }
+
+  await requestWithAuth(`/uploads/${sourceId}`, accessToken, {
+    method: "DELETE",
+  });
+}

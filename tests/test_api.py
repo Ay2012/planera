@@ -398,3 +398,25 @@ def test_uploads_and_analysis_are_scoped_to_the_signed_in_user(client: TestClien
     assert forbidden.status_code == 400
     assert forbidden.json()["detail"]["message"] == "Attach a valid uploaded data source before running analysis."
     assert called is False
+
+
+def test_delete_upload_removes_file_and_listing(client: TestClient, tmp_path) -> None:
+    owner = _signup(client, "delete-owner@example.com")
+    intruder = _signup(client, "delete-intruder@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner}"}
+    intruder_headers = {"Authorization": f"Bearer {intruder}"}
+
+    upload_response = client.post(
+        "/uploads",
+        files={"file": ("orders.json", BytesIO(b'[{"order_id":"o1"}]'), "application/json")},
+        headers=owner_headers,
+    )
+    source_id = upload_response.json()["asset"]["id"]
+
+    forbidden = client.delete(f"/uploads/{source_id}", headers=intruder_headers)
+    assert forbidden.status_code == 404
+
+    delete_response = client.delete(f"/uploads/{source_id}", headers=owner_headers)
+    assert delete_response.status_code == 204
+    assert client.get("/uploads", headers=owner_headers).json() == []
+    assert not any((tmp_path / "uploads").rglob("original.json"))

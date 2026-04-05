@@ -26,6 +26,7 @@ async function loadUseUpload(options?: {
     asset: createAsset("source_uploaded", "orders.csv"),
     fallback: false,
   });
+  const deleteUpload = vi.fn().mockResolvedValue(undefined);
 
   vi.doMock("@/hooks/useAuth", () => ({
     useAuth: () => ({
@@ -44,10 +45,11 @@ async function loadUseUpload(options?: {
   vi.doMock("@/api/uploads", () => ({
     fetchUploads,
     uploadDataset,
+    deleteUpload,
   }));
 
   const module = await import("@/hooks/useUpload");
-  return { useUpload: module.useUpload, fetchUploads, uploadDataset };
+  return { useUpload: module.useUpload, fetchUploads, uploadDataset, deleteUpload };
 }
 
 afterEach(() => {
@@ -97,5 +99,22 @@ describe("useUpload", () => {
     expect(uploadDataset).toHaveBeenCalled();
     expect(result.current.uploads.map((asset) => asset.id)).toEqual(["source_uploaded", "source_existing"]);
     expect(result.current.latestUploadMode).toBe("live");
+  });
+
+  it("removes a deleted file from the upload list", async () => {
+    const fetchedUploads = [createAsset("source_existing", "customers.csv"), createAsset("source_delete", "orders.csv")];
+    const { useUpload, deleteUpload } = await loadUseUpload({ fetchedUploads });
+    const { result } = renderHook(() => useUpload());
+
+    await waitFor(() => {
+      expect(result.current.uploads).toHaveLength(2);
+    });
+
+    await act(async () => {
+      await result.current.deleteUpload("source_delete");
+    });
+
+    expect(deleteUpload).toHaveBeenCalledWith("source_delete", "token_123");
+    expect(result.current.uploads.map((asset) => asset.id)).toEqual(["source_existing"]);
   });
 });

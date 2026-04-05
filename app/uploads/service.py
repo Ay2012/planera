@@ -131,3 +131,25 @@ def create_user_upload(
 
     db.refresh(record)
     return _asset_from_record(record)
+
+
+def delete_user_upload(
+    db: Session,
+    user: User,
+    source_id: str,
+    *,
+    blob_store: LocalUploadBlobStore | None = None,
+) -> bool:
+    record = db.get(UploadRecord, source_id)
+    if record is None or record.user_id != user.id:
+        return False
+
+    store = blob_store or LocalUploadBlobStore()
+    storage_path = record.storage_path
+    db.delete(record)
+    db.commit()
+    try:
+        delete_source(source_id)
+    finally:
+        store.delete(storage_path)
+    return True

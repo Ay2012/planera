@@ -12,10 +12,12 @@ interface UploadsPanelProps {
   uploads: UploadedAsset[];
   error: string | null;
   isUploading: boolean;
+  deletingUploadId: string | null;
   onUpload: (file: File) => void;
+  onDelete: (assetId: string) => void;
 }
 
-export function UploadsPanel({ uploads, error, isUploading, onUpload }: UploadsPanelProps) {
+export function UploadsPanel({ uploads, error, isUploading, deletingUploadId, onUpload, onDelete }: UploadsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -51,7 +53,12 @@ export function UploadsPanel({ uploads, error, isUploading, onUpload }: UploadsP
       {uploads.length ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {uploads.map((asset) => (
-            <UploadCard key={asset.id} asset={asset} />
+            <UploadCard
+              key={asset.id}
+              asset={asset}
+              onDelete={onDelete}
+              isDeleting={deletingUploadId === asset.id}
+            />
           ))}
         </div>
       ) : (
