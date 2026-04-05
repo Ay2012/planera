@@ -6,12 +6,27 @@ Rules:
 - Follow the response schema exactly.
 - repair_action must be "replace_step".
 - updated_step must use "type": "sql", the same id as the failed step ({{ failed_step_id }}), and a fixed "query".
-- Use only exact relation and column names from the schema manifest.
-- Use semantic mappings only to translate user language into exact schema fields.
-- Do not invent fields or rename columns.
+{% include "planner_invariants.j2" %}
+- Preserve the analytical intent of the original user query.
+- Preserve the original comparison logic, grouping logic, population/filter logic, output shape, period logic, and minimum row requirements.
+- Preserve the required metric columns from the original expectation block.
+- Preserve any distinct-period requirement from the original expectation block.
+- Do not replace an invalid identifier with a semantically unrelated valid column.
+- If the schema mapping does not justify a replacement, prefer a simpler valid query over a misleading one.
+- Keep the original step expectation block unchanged.
+- Do not weaken a premise-check query into a trivial result such as selecting only the period column, limiting to one row, or dropping the required aggregate metric.
+
+Original user query:
+{{ query }}
 
 Original plan:
 {{ plan_json }}
+
+Original failed step:
+{{ failed_step_json }}
+
+Original step expectation:
+{{ failed_step_expectation_json }}
 
 Failed step id: {{ failed_step_id }}
 
@@ -28,6 +43,7 @@ Return JSON in this shape:
     "id": <same int as failed step>,
     "purpose": "string",
     "type": "sql",
-    "query": "corrected SQL"
+    "query": "corrected SQL",
+    "expectation": {{ failed_step_expectation_json }}
   }
 }

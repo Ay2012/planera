@@ -23,6 +23,7 @@ def reset_workspace_state() -> None:
 def test_analyze_response_accepts_skipped_trace() -> None:
     """execute_plan_node emits skipped when there is no plan; API must still serialize."""
     resp = AnalyzeResponse(
+        answer_status="insufficient_evidence",
         analysis="Planner failed; no execution.",
         trace=[
             {
@@ -54,6 +55,7 @@ def test_sample_questions_endpoint() -> None:
 def test_analyze_endpoint_structure() -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
+            "answer_status": "answered",
             "analysis": "## Summary\nPipeline velocity improved.\n",
             "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
             "executed_steps": [
@@ -90,10 +92,11 @@ def test_analyze_endpoint_structure() -> None:
         routes.run_analysis = original
     assert response.status_code == 200
     payload = response.json()
-    assert {"analysis", "trace", "executed_steps", "errors", "inspection_id"} <= payload.keys()
+    assert {"answer_status", "analysis", "trace", "executed_steps", "errors", "inspection_id"} <= payload.keys()
     assert isinstance(payload["trace"], list)
     assert isinstance(payload["executed_steps"], list)
     assert isinstance(payload["analysis"], str)
+    assert payload["answer_status"] == "answered"
     assert isinstance(payload["inspection_id"], str)
 
 
@@ -135,6 +138,7 @@ def test_upload_endpoint_profiles_csv() -> None:
 def test_inspection_endpoint_returns_stored_inspection() -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
+            "answer_status": "answered",
             "analysis": "## Summary\nPipeline velocity improved.\n",
             "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
             "executed_steps": [

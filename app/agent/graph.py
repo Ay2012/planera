@@ -25,6 +25,13 @@ def _append_error(state: AnalysisState, step: str, message: str, recoverable: bo
     state["errors"].append({"step": step, "message": message, "recoverable": recoverable, "details": details or {}})
 
 
+def _has_usable_evidence(state: AnalysisState) -> bool:
+    return any(
+        step.get("status") == "success" and step.get("validation_status") in (None, "valid", "partial")
+        for step in state.get("executed_steps") or []
+    )
+
+
 def load_schema_context_node(state: AnalysisState) -> AnalysisState:
     step_name = "load_schema_context_node"
     _append_trace(state, step_name, "started", {})
@@ -83,6 +90,7 @@ def execute_plan_node(state: AnalysisState) -> AnalysisState:
 
     if outcome["status"] == "success":
         state["workflow_status"] = "ready_to_analyze"
+        state["unresolved_step_ids"] = []
         _append_trace(state, step_name, "completed", {"status": "success"})
         return state
 
@@ -93,11 +101,12 @@ def execute_plan_node(state: AnalysisState) -> AnalysisState:
         state = repair_failed_step(state, failed_id, err)
     except Exception as exc:
         _append_error(state, "repair_planner", str(exc), recoverable=False, details={"failed_step_id": failed_id})
-        state["workflow_status"] = "execution_failed"
+        state["unresolved_step_ids"] = [failed_id]
+        state["workflow_status"] = "partial_execution" if _has_usable_evidence(state) else "execution_failed"
         _append_trace(state, step_name, "failed", {"phase": "repair", "message": str(exc)})
         return state
 
-    if state["executed_steps"] and state["executed_steps"][-1]["status"] == "failed":
+    if state["executed_steps"] and state["executed_steps"][-1]["status"] in {"failed", "invalid"}:
         state["executed_steps"].pop()
 
     plan = state["compiled_plan"] or {}
@@ -108,7 +117,7 @@ def execute_plan_node(state: AnalysisState) -> AnalysisState:
         return state
 
     retry = execute_single_plan_step(state, step_row, attempt=2)
-    if retry["status"] == "failed":
+    if retry["status"] in {"failed", "invalid"}:
         _append_error(
             state,
             step_name,
@@ -116,10 +125,12 @@ def execute_plan_node(state: AnalysisState) -> AnalysisState:
             recoverable=False,
             details={"failed_step_id": failed_id},
         )
-        state["workflow_status"] = "execution_failed"
+        state["unresolved_step_ids"] = [failed_id]
+        state["workflow_status"] = "partial_execution" if _has_usable_evidence(state) else "execution_failed"
         _append_trace(state, step_name, "failed", {"phase": "retry", "failed_step_id": failed_id})
     else:
         state["workflow_status"] = "ready_to_analyze"
+        state["unresolved_step_ids"] = []
         _append_trace(state, step_name, "completed", {"status": "success_after_repair"})
 
     return state
@@ -132,9 +143,21 @@ def analysis_node(state: AnalysisState) -> AnalysisState:
         state = run_analysis_narrative(state)
         _append_trace(state, step_name, "completed", {"length": len(state["analysis"])})
     except Exception as exc:
-        state["analysis"] = f"The analysis step failed: {exc}"
-        _append_error(state, step_name, str(exc), recoverable=False)
-        _append_trace(state, step_name, "failed", {"message": str(exc)})
+        logger.warning("%s failed: %s", step_name, exc, exc_info=True)
+        state["analysis"] = "The available evidence is incomplete for a full answer."
+        state["answer_status"] = "partial_answer" if _has_usable_evidence(state) else "insufficient_evidence"
+        _append_error(
+            state,
+            step_name,
+            "The workflow could not render a fully validated narrative for this run.",
+            recoverable=False,
+        )
+        _append_trace(
+            state,
+            step_name,
+            "failed",
+            {"message": "The workflow could not render a fully validated narrative for this run."},
+        )
     return state
 
 

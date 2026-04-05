@@ -91,6 +91,7 @@ function buildAssistantPayload(response: AnalyzeApiResponse, inspection: Inspect
   const metrics = buildMetrics(successCount, totalSteps, inspection.rowsReturned, inspection);
 
   const detailPool = [
+    `Answer status: ${response.answer_status.replace(/_/g, " ")}.`,
     ...parsed.details,
     primaryArtifact
       ? `Preview ready for ${primaryArtifact.alias} with ${inspection.rowsReturned} row${inspection.rowsReturned === 1 ? "" : "s"} available in the inspection drawer.`
@@ -258,6 +259,7 @@ function buildExecutionChips(response: AnalyzeApiResponse, primaryArtifact: Anal
       executedSteps ? `${executedSteps} workflow step${executedSteps === 1 ? "" : "s"}` : "No executed steps",
       primaryArtifact ? `Output: ${primaryArtifact.alias}` : "No output alias",
       retryCount ? `${retryCount} retry attempt${retryCount === 1 ? "" : "s"}` : "No retries",
+      `Answer: ${response.answer_status.replace(/_/g, " ")}`,
       response.errors.length ? `${response.errors.length} issue${response.errors.length === 1 ? "" : "s"}` : "No recorded errors",
     ].filter(Boolean),
   ).slice(0, 4);
@@ -284,6 +286,17 @@ function buildValidation(
           ? "At least one execution step completed successfully."
           : "No successful execution steps were returned for this prompt.",
       status: fatalErrors ? "fail" : successCount > 0 ? "pass" : "warn",
+    },
+    {
+      id: "answer_status",
+      label: "Answer status",
+      detail: `The backend classified this run as ${response.answer_status.replace(/_/g, " ")}.`,
+      status:
+        response.answer_status === "answered" || response.answer_status === "contradicted_premise"
+          ? "pass"
+          : response.answer_status === "partial_answer"
+            ? "warn"
+            : "fail",
     },
     {
       id: "step_coverage",
@@ -335,9 +348,13 @@ function buildMetadata(
       label: "Execution status",
       value: response.errors.some((item) => !item.recoverable)
         ? "Failed"
-        : response.errors.length || response.executed_steps.some((step) => step.attempt > 1)
+        : response.errors.length || response.executed_steps.some((step) => step.attempt > 1) || response.answer_status !== "answered"
           ? "Completed with review notes"
           : "Complete",
+    },
+    {
+      label: "Answer status",
+      value: response.answer_status.replace(/_/g, " "),
     },
     {
       label: "Verification",
@@ -473,10 +490,14 @@ function deriveInspectionStatus(response: AnalyzeApiResponse, steps: AnalyzeExec
     return "error";
   }
 
+  if (response.answer_status === "partial_answer" || response.answer_status === "insufficient_evidence" || response.answer_status === "conflicting_evidence") {
+    return "warning";
+  }
+
   if (
     response.errors.length > 0 ||
     response.trace.some((event) => event.status === "failed" || event.status === "skipped") ||
-    steps.some((step) => step.status === "failed" || step.attempt > 1)
+    steps.some((step) => step.status === "failed" || step.status === "invalid" || step.attempt > 1)
   ) {
     return "warning";
   }
@@ -491,7 +512,15 @@ function deriveConfidence(response: AnalyzeApiResponse, primaryArtifact: Analyze
   const previewBonus = primaryArtifact?.row_count ? 0.16 : 0;
   const traceBonus = response.trace.some((event) => event.status === "completed") ? 0.07 : 0;
   const errorPenalty = response.errors.some((item) => !item.recoverable) ? 0.18 : response.errors.length ? 0.08 : 0;
-  const score = 0.46 + successRatio * 0.24 + previewBonus + traceBonus - errorPenalty;
+  const answerPenalty =
+    response.answer_status === "conflicting_evidence"
+      ? 0.15
+      : response.answer_status === "insufficient_evidence"
+        ? 0.12
+        : response.answer_status === "partial_answer"
+          ? 0.06
+          : 0;
+  const score = 0.46 + successRatio * 0.24 + previewBonus + traceBonus - errorPenalty - answerPenalty;
 
   return clamp(score, 0.35, 0.95);
 }

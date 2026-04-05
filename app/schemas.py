@@ -50,6 +50,7 @@ class CompiledPlanStep(BaseModel):
     purpose: str = Field(..., min_length=1)
     type: Literal["sql"]
     query: str = Field(..., min_length=1)
+    expectation: StepExpectation
     output_alias: str | None = None
 
 
@@ -80,6 +81,21 @@ class RepairDecision(BaseModel):
     updated_step: CompiledPlanStep
 
 
+class StepExpectation(BaseModel):
+    """Deterministic analytical contract for one compiled plan step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step_category: Literal["premise_check", "breakdown", "follow_up"] = "follow_up"
+    comparison_type: Literal["period_comparison", "grouped_breakdown", "distribution", "single_result"] = "single_result"
+    expected_grouping_columns: list[str] = Field(default_factory=list)
+    expected_metric_columns: list[str] = Field(default_factory=list)
+    expected_period_column: str = ""
+    min_expected_rows: int = 1
+    requires_distinct_periods: bool = False
+    preserve_population_from_step_id: int | None = None
+
+
 class SchemaConceptMapping(BaseModel):
     """Heuristic business-language alias mapped to exact schema fields."""
 
@@ -98,7 +114,22 @@ class SchemaColumn(BaseModel):
     name: str = Field(..., min_length=1)
     dtype: str = Field(..., min_length=1)
     type_family: Literal["string", "number", "boolean", "datetime", "unknown"] = "unknown"
+    field_origin: Literal["source_backed", "derived"] = "source_backed"
+    derived_from: list[str] = Field(default_factory=list)
     semantic_hints: list[str] = Field(default_factory=list)
+
+
+class SchemaRelationship(BaseModel):
+    """Optional relationship metadata for joining normalized relations."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    left_relation: str = Field(..., min_length=1)
+    right_relation: str = Field(..., min_length=1)
+    left_on: list[str] = Field(default_factory=list)
+    right_on: list[str] = Field(default_factory=list)
+    relationship_type: Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"] = "unknown"
+    confidence: Literal["heuristic", "explicit"] = "heuristic"
 
 
 class SchemaRelation(BaseModel):
@@ -127,6 +158,7 @@ class SchemaManifest(BaseModel):
     source: str = ""
     dialect: str = ""
     relations: list[SchemaRelation] = Field(default_factory=list)
+    relationships: list[SchemaRelationship] = Field(default_factory=list)
     views: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -148,6 +180,10 @@ class EvidenceItem(BaseModel):
     source_alias: str = Field(..., min_length=1)
     source_purpose: str = Field(..., min_length=1)
     row_label: str = Field(..., min_length=1)
+    step_category: Literal["premise_check", "breakdown", "follow_up"] = "follow_up"
+    comparison_type: Literal["period_comparison", "grouped_breakdown", "distribution", "single_result"] = "single_result"
+    period_label: str = ""
+    dimensions: dict[str, str] = Field(default_factory=dict)
     entities: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
     values: list[EvidenceValue] = Field(default_factory=list)
@@ -185,7 +221,7 @@ class AnalysisRenderResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    answer_status: Literal["answered", "insufficient_evidence", "contradicted_premise", "conflicting_evidence"]
+    answer_status: Literal["answered", "partial_answer", "insufficient_evidence", "contradicted_premise", "conflicting_evidence"]
     analysis_markdown: str = Field(..., min_length=1)
     used_claim_ids: list[str] = Field(default_factory=list)
 
@@ -199,7 +235,10 @@ class ExecutedStep(BaseModel):
     code: str
     output_alias: str
     attempt: int
-    status: Literal["success", "failed"]
+    status: Literal["success", "invalid", "failed"]
+    validation_status: Literal["valid", "partial", "invalid"] | None = None
+    validation_reason: str | None = None
+    expectation: StepExpectation | None = None
     artifact: ArtifactSummary | None = None
     error: str | None = None
 
@@ -207,6 +246,7 @@ class ExecutedStep(BaseModel):
 class AnalyzeResponse(BaseModel):
     """Final API response for a completed analysis run."""
 
+    answer_status: Literal["answered", "partial_answer", "insufficient_evidence", "contradicted_premise", "conflicting_evidence"]
     analysis: str
     trace: list[TraceEvent]
     executed_steps: list[ExecutedStep]

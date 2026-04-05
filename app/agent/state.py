@@ -20,9 +20,11 @@ class AnalysisState(TypedDict):
     artifacts: dict[str, Any]
     executed_steps: list[dict[str, Any]]
     analysis: str
+    answer_status: str
     total_steps: int
     last_error: dict[str, Any] | None
     workflow_status: str
+    unresolved_step_ids: list[str]
     trace: list[dict[str, Any]]
     errors: list[dict[str, Any]]
 
@@ -41,9 +43,11 @@ def create_initial_state(query: str) -> AnalysisState:
         artifacts={},
         executed_steps=[],
         analysis="",
+        answer_status="insufficient_evidence",
         total_steps=0,
         last_error=None,
         workflow_status="planning",
+        unresolved_step_ids=[],
         trace=[],
         errors=[],
     )

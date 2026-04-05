@@ -1,4 +1,4 @@
-"""API routes for GTM Analytics Copilot."""
+"""API routes for the Planera analytics copilot."""
 
 from __future__ import annotations
 
@@ -60,6 +60,7 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     try:
         state = run_analysis(request.query)
         base_response = AnalyzeResponse(
+            answer_status=state.get("answer_status", "insufficient_evidence"),
             analysis=state["analysis"],
             trace=state.get("trace", []),
             executed_steps=state.get("executed_steps", []),
@@ -67,6 +68,7 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
         )
         inspection_id = store_inspection(request.query, base_response)
         return AnalyzeResponse(
+            answer_status=base_response.answer_status,
             analysis=base_response.analysis,
             trace=base_response.trace,
             executed_steps=base_response.executed_steps,

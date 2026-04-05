@@ -8,10 +8,12 @@ Rules:
 - CRITICAL — the "max_steps" field: set it to the integer 3 always. It is the platform's fixed ceiling, not the count of steps you return. Do not set max_steps to 1 or 2 even if the plan has only one or two queries.
 - Every step must use "type": "sql" and put the full SQL statement in "query".
 - Use only these registered relation names: {{ relation_names_json }}
-- Use exact column names only. Never invent, normalize, paraphrase, or rename a column.
-- Use semantic mappings only to translate user language into exact schema fields.
-- Do not assume the question premise is true. First verify the main metric or comparison before planning causal or grouped breakdowns.
-- Prefer SQL over multiple trivial splits; combine logic when one query suffices.
+{% include "planner_invariants.j2" %}
+- Step 1 must be a `premise_check` step that verifies the primary comparison before any breakdown steps.
+- For premise checks, preserve comparable populations and period logic. Use stable comparison shapes such as one row per period when the schema allows it.
+- Later steps may investigate grounded breakdowns only if they add distinct explanatory value beyond Step 1.
+- If the schema subset does not support a requested entity or dimension, do not guess a substitute. Fall back to a simpler grounded query.
+- Maintain consistent aggregation grain between comparable rows and periods.
 - No imports, file I/O, network calls, or plotting.
 - Optional "output_alias" per step for stable names; if omitted, the executor uses `step_<id>`.
 
@@ -23,7 +25,17 @@ Return JSON in this exact shape:
       "id": 1,
       "purpose": "string",
       "type": "sql",
-      "query": "SQL query string"
+      "query": "SQL query string",
+      "expectation": {
+        "step_category": "premise_check | breakdown | follow_up",
+        "comparison_type": "period_comparison | grouped_breakdown | distribution | single_result",
+        "expected_grouping_columns": ["column_name"],
+        "expected_metric_columns": ["column_name"],
+        "expected_period_column": "column_name or empty string",
+        "min_expected_rows": 1,
+        "requires_distinct_periods": false,
+        "preserve_population_from_step_id": null
+      }
     }
   ],
   "max_steps": 3,

@@ -64,12 +64,15 @@ export interface AnalyzeExecutedStep {
   code: string;
   output_alias: string;
   attempt: number;
-  status: "success" | "failed";
+  status: "success" | "invalid" | "failed";
+  validation_status?: "valid" | "partial" | "invalid" | null;
+  validation_reason?: string | null;
   artifact?: AnalyzeArtifactSummary | null;
   error?: string | null;
 }
 
 export interface AnalyzeApiResponse {
+  answer_status: "answered" | "partial_answer" | "insufficient_evidence" | "contradicted_premise" | "conflicting_evidence";
   analysis: string;
   trace: AnalyzeTraceEvent[];
   executed_steps: AnalyzeExecutedStep[];

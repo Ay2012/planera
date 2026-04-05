@@ -179,6 +179,7 @@ def _build_execution_chips(response: AnalyzeResponse, primary_artifact: Artifact
             f"{executed_steps} workflow step{'' if executed_steps == 1 else 's'}" if executed_steps else "No executed steps",
             f"Output: {primary_artifact.alias}" if primary_artifact else "No output alias",
             f"{retry_count} retry attempt{'' if retry_count == 1 else 's'}" if retry_count else "No retries",
+            f"Answer: {response.answer_status.replace('_', ' ')}",
             f"{len(response.errors)} issue{'' if len(response.errors) == 1 else 's'}" if response.errors else "No recorded errors",
         ]
     )[:4]
@@ -265,10 +266,11 @@ def _build_metadata(
                 "Failed"
                 if any(not item.recoverable for item in response.errors)
                 else "Completed with review notes"
-                if response.errors or any(step.attempt > 1 for step in response.executed_steps)
+                if response.errors or any(step.attempt > 1 for step in response.executed_steps) or response.answer_status in {"partial_answer", "insufficient_evidence", "conflicting_evidence"}
                 else "Complete"
             ),
         ),
+        MetadataItem(label="Answer status", value=response.answer_status.replace("_", " ")),
         MetadataItem(label="Verification", value="Verified" if verified else "Needs analyst review"),
         MetadataItem(
             label="Output shape",
@@ -356,10 +358,12 @@ def _derive_inspection_status(response: AnalyzeResponse) -> str:
     steps = response.executed_steps
     if any(not item.recoverable for item in response.errors) or (steps and not any(step.status == "success" for step in steps)):
         return "error"
+    if response.answer_status in {"partial_answer", "insufficient_evidence", "conflicting_evidence"}:
+        return "warning"
     if (
         response.errors
         or any(event.status in {"failed", "skipped"} for event in response.trace)
-        or any(step.status == "failed" or step.attempt > 1 for step in steps)
+        or any(step.status in {"failed", "invalid"} or step.attempt > 1 for step in steps)
     ):
         return "warning"
     return "valid"
@@ -372,7 +376,16 @@ def _derive_confidence(response: AnalyzeResponse, primary_artifact: ArtifactSumm
     preview_bonus = 0.16 if primary_artifact and primary_artifact.row_count else 0.0
     trace_bonus = 0.07 if any(event.status == "completed" for event in response.trace) else 0.0
     error_penalty = 0.18 if any(not item.recoverable for item in response.errors) else 0.08 if response.errors else 0.0
-    score = 0.46 + success_ratio * 0.24 + preview_bonus + trace_bonus - error_penalty
+    answer_penalty = (
+        0.15
+        if response.answer_status == "conflicting_evidence"
+        else 0.12
+        if response.answer_status == "insufficient_evidence"
+        else 0.06
+        if response.answer_status == "partial_answer"
+        else 0.0
+    )
+    score = 0.46 + success_ratio * 0.24 + preview_bonus + trace_bonus - error_penalty - answer_penalty
     return _clamp(score, 0.35, 0.95)
 
 
