@@ -11,6 +11,7 @@ class AnalysisState(TypedDict):
     """Explicit state carried through the analytics workflow."""
 
     query: str
+    source_ids: list[str]
     dataset_context: dict[str, Any]
     intent: str
     metric: str
@@ -27,11 +28,12 @@ class AnalysisState(TypedDict):
     errors: list[dict[str, Any]]
 
 
-def create_initial_state(query: str) -> AnalysisState:
+def create_initial_state(query: str, source_ids: list[str] | None = None) -> AnalysisState:
     """Return the initial workflow state for a new request."""
 
     return AnalysisState(
         query=query,
+        source_ids=list(source_ids or []),
         dataset_context={},
         intent="",
         metric="",

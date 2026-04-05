@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.config import get_settings
+from app.data.registry import get_upload_source_ids
 from app.db.session import get_db
 from app.models.conversation import Conversation, Message
 from app.models.user import User
@@ -146,8 +147,19 @@ def chat_turn(
     db.add(user_msg)
     db.flush()
 
+    requested_source_ids = list(dict.fromkeys(body.source_ids or []))
+    if requested_source_ids:
+        valid_source_ids = get_upload_source_ids(requested_source_ids)
+        if len(valid_source_ids) != len(requested_source_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Attach a valid uploaded data source before running analysis."},
+            )
+    else:
+        valid_source_ids = None
+
     try:
-        analysis_run = run_stored_analysis(body.query)
+        analysis_run = run_stored_analysis(body.query, source_ids=valid_source_ids)
         analysis_result = analysis_run.response
         inspection_payload = analysis_run.inspection
     except Exception as exc:  # pragma: no cover - defensive API fallback

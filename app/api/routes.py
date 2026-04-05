@@ -14,6 +14,7 @@ from app.models.inspection_snapshot import InspectionSnapshot
 from app.models.user import User
 from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionData, InspectionResponse, SampleQuestionsResponse, UploadResponse
 from app.services.analysis_run import run_stored_analysis
+from app.data.registry import get_upload_source_ids
 from app.utils.constants import SAMPLE_QUESTIONS
 from app.utils.logging import get_logger
 
@@ -103,8 +104,22 @@ def inspection_details(
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     """Run analytics without persistence (see OpenAPI ``description`` — prefer ``POST /chat`` for product flows)."""
 
+    requested_source_ids = list(dict.fromkeys(request.source_ids or []))
+    if not requested_source_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Upload and attach at least one CSV or JSON data source before running analysis."},
+        )
+
+    valid_source_ids = get_upload_source_ids(requested_source_ids)
+    if len(valid_source_ids) != len(requested_source_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Attach a valid uploaded data source before running analysis."},
+        )
+
     try:
-        return run_stored_analysis(request.query).response
+        return run_stored_analysis(request.query, source_ids=valid_source_ids).response
     except Exception as exc:  # pragma: no cover - defensive API fallback
         logger.exception("Analyze request failed", extra={"query": request.query})
         settings = get_settings()

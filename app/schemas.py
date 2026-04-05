@@ -12,6 +12,7 @@ class AnalyzeRequest(BaseModel):
     """Incoming analysis request."""
 
     query: str = Field(..., min_length=3, examples=["Why did pipeline velocity drop this week?"])
+    source_ids: list[str] = Field(default_factory=list)
 
 
 class TraceEvent(BaseModel):
@@ -99,7 +100,21 @@ class SchemaColumn(BaseModel):
     name: str = Field(..., min_length=1)
     dtype: str = Field(..., min_length=1)
     type_family: Literal["string", "number", "boolean", "datetime", "unknown"] = "unknown"
+    original_name: str = ""
+    source_path: str = ""
+    nullable: bool = True
     semantic_hints: list[str] = Field(default_factory=list)
+
+
+class SchemaJoinKey(BaseModel):
+    """One explicit relation-level join path available to the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_relation: str = Field(..., min_length=1)
+    source_column: str = Field(..., min_length=1)
+    target_column: str = Field(..., min_length=1)
+    link_type: Literal["parent_child", "explicit"] = "explicit"
 
 
 class SchemaRelation(BaseModel):
@@ -109,12 +124,18 @@ class SchemaRelation(BaseModel):
 
     name: str = Field(..., min_length=1)
     kind: Literal["table", "view"] = "view"
+    source_id: str = ""
+    source_name: str = ""
+    is_primary: bool = False
+    parent_relation: str | None = None
     row_count: int = 0
     grain: str = ""
     identifier_columns: list[str] = Field(default_factory=list)
     time_columns: list[str] = Field(default_factory=list)
     measure_columns: list[str] = Field(default_factory=list)
     dimension_columns: list[str] = Field(default_factory=list)
+    join_keys: list[SchemaJoinKey] = Field(default_factory=list)
+    lineage: dict[str, Any] = Field(default_factory=dict)
     columns: list[SchemaColumn] = Field(default_factory=list)
     semantic_mappings: list[SchemaConceptMapping] = Field(default_factory=list)
 
@@ -266,6 +287,7 @@ class ChatSubmitRequest(BaseModel):
 
     conversation_id: int | str | None = None
     query: str = Field(..., min_length=3)
+    source_ids: list[str] = Field(default_factory=list)
 
     @field_validator("conversation_id", mode="before")
     @classmethod
@@ -334,6 +356,8 @@ class UploadedAsset(BaseModel):
     status: Literal["uploaded", "profiling", "verified", "error"]
     rows: int | None = None
     columns: int | None = None
+    relationCount: int | None = None
+    primaryRelationName: str | None = None
     summary: str | None = None
 
 

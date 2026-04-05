@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     data_dir: Path = Field(default=BASE_DIR / "data")
+    registry_path: Path = Field(default=BASE_DIR / "data" / "source_registry.duckdb")
     crm_path: Path = Field(default=BASE_DIR / "data" / "crm.csv")
     subscriptions_path: Path = Field(default=BASE_DIR / "data" / "subscriptions.csv")
     crm_dataset_dir: Path = Field(default=BASE_DIR / "data" / "CRM+Sales+Opportunities")

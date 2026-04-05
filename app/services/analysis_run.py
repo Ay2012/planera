@@ -25,10 +25,10 @@ class StoredAnalysisRun:
     inspection: InspectionData
 
 
-def run_stored_analysis(query: str) -> StoredAnalysisRun:
+def run_stored_analysis(query: str, source_ids: list[str] | None = None) -> StoredAnalysisRun:
     """Run `run_analysis`, persist inspection to process memory, return API + inspection objects."""
 
-    state = run_analysis(query)
+    state = run_analysis(query, source_ids=source_ids)
     base = AnalyzeResponse(
         analysis=state["analysis"],
         trace=state.get("trace", []),

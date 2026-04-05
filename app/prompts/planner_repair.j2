@@ -8,6 +8,8 @@ Rules:
 - updated_step must use "type": "sql", the same id as the failed step ({{ failed_step_id }}), and a fixed "query".
 - Use only exact relation and column names from the schema manifest.
 - Use semantic mappings only to translate user language into exact schema fields.
+- Prefer relations where "is_primary" is true before using child relations.
+- Only join relations when the schema manifest exposes the join path in "join_keys".
 - Do not invent fields or rename columns.
 
 Original plan:

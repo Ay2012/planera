@@ -62,7 +62,7 @@ def test_sample_questions_endpoint(client: TestClient) -> None:
 
 
 def test_analyze_endpoint_structure(client: TestClient) -> None:
-    def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
+    def fake_run_analysis(query: str, source_ids=None) -> dict:  # noqa: ARG001
         return {
             "analysis": "## Summary\nPipeline velocity improved.\n",
             "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
@@ -95,7 +95,12 @@ def test_analyze_endpoint_structure(client: TestClient) -> None:
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
-        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
+        upload_response = client.post(
+            "/uploads",
+            files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        )
+        source_id = upload_response.json()["asset"]["id"]
+        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]})
     finally:
         analysis_run.run_analysis = original
     assert response.status_code == 200
@@ -108,7 +113,7 @@ def test_analyze_endpoint_structure(client: TestClient) -> None:
 
 
 def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> None:
-    def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
+    def fake_run_analysis(query: str, source_ids=None) -> dict:  # noqa: ARG001
         raise RuntimeError("planner exploded")
 
     import app.services.analysis_run as analysis_run
@@ -116,7 +121,12 @@ def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> Non
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
-        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
+        upload_response = client.post(
+            "/uploads",
+            files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        )
+        source_id = upload_response.json()["asset"]["id"]
+        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]})
     finally:
         analysis_run.run_analysis = original
 
@@ -140,10 +150,34 @@ def test_upload_endpoint_profiles_csv(client: TestClient) -> None:
     assert payload["asset"]["rows"] == 2
     assert payload["asset"]["columns"] == 2
     assert payload["asset"]["status"] == "verified"
+    assert payload["asset"]["relationCount"] == 1
+    assert payload["asset"]["primaryRelationName"]
+
+
+def test_upload_endpoint_profiles_json(client: TestClient) -> None:
+    response = client.post(
+        "/uploads",
+        files={
+            "file": (
+                "orders.json",
+                BytesIO(
+                    b'[{"order_id":"o1","customer":{"name":"Ada"},"items":[{"sku":"A1","qty":2}]}]'
+                ),
+                "application/json",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset"]["type"] == "JSON"
+    assert payload["asset"]["rows"] == 1
+    assert payload["asset"]["relationCount"] == 2
+    assert payload["asset"]["primaryRelationName"]
 
 
 def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> None:
-    def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
+    def fake_run_analysis(query: str, source_ids=None) -> dict:  # noqa: ARG001
         return {
             "analysis": "## Summary\nPipeline velocity improved.\n",
             "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {"objective": "x"}}],
@@ -175,7 +209,15 @@ def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> No
     original = analysis_run.run_analysis
     analysis_run.run_analysis = fake_run_analysis
     try:
-        analyze_response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
+        upload_response = client.post(
+            "/uploads",
+            files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        )
+        source_id = upload_response.json()["asset"]["id"]
+        analyze_response = client.post(
+            "/analyze",
+            json={"query": "Why did pipeline velocity drop this week?", "source_ids": [source_id]},
+        )
     finally:
         analysis_run.run_analysis = original
 
@@ -194,3 +236,57 @@ def test_inspection_endpoint_returns_404_for_unknown_id(client: TestClient) -> N
     response = client.get("/inspections/inspect_missing")
     assert response.status_code == 404
     assert response.json()["detail"]["message"] == "Inspection not found."
+
+
+def test_analyze_endpoint_forwards_source_ids(client: TestClient) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_analysis(query: str, source_ids=None) -> dict:
+        captured["query"] = query
+        captured["source_ids"] = source_ids
+        return {
+            "analysis": "## Summary\nScoped analysis.\n",
+            "trace": [],
+            "executed_steps": [],
+            "errors": [],
+        }
+
+    import app.services.analysis_run as analysis_run
+
+    original = analysis_run.run_analysis
+    analysis_run.run_analysis = fake_run_analysis
+    try:
+        upload_response = client.post(
+            "/uploads",
+            files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
+        )
+        source_id = upload_response.json()["asset"]["id"]
+        response = client.post("/analyze", json={"query": "Use this upload", "source_ids": [source_id]})
+    finally:
+        analysis_run.run_analysis = original
+
+    assert response.status_code == 200
+    assert captured["query"] == "Use this upload"
+    assert captured["source_ids"] == [source_id]
+
+
+def test_analyze_endpoint_requires_uploaded_source_before_run_analysis(client: TestClient) -> None:
+    import app.services.analysis_run as analysis_run
+
+    called = False
+    original = analysis_run.run_analysis
+
+    def fake_run_analysis(query: str, source_ids=None) -> dict:
+        nonlocal called
+        called = True
+        return {"analysis": "", "trace": [], "executed_steps": [], "errors": []}
+
+    analysis_run.run_analysis = fake_run_analysis
+    try:
+        response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
+    finally:
+        analysis_run.run_analysis = original
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Upload and attach at least one CSV or JSON data source before running analysis."
+    assert called is False

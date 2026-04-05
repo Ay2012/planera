@@ -122,7 +122,7 @@ export function ChatInput({
                 {isUploading ? <Spinner className="h-4 w-4" /> : null}
                 Attach file
               </Button>
-              <span className="min-w-0 text-xs text-muted">CSV, TSV, SQL exports, or connected data sources</span>
+              <span className="min-w-0 text-xs text-muted">CSV, JSON, TSV, SQL exports, or connected data sources</span>
             </div>
             <Button onClick={onSubmit} disabled={isSubmitting || value.trim().length === 0}>
               {isSubmitting ? <Spinner className="h-4 w-4 border-white/30 border-t-white" /> : null}

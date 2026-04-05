@@ -61,15 +61,18 @@ def _register_artifacts(conn: duckdb.DuckDBPyConnection, state: AnalysisState) -
 
 
 def _execute_sql(state: AnalysisState, step: dict[str, Any]) -> ArtifactSummary:
-    conn = new_duckdb_connection()
-    _register_artifacts(conn, state)
-    frame = conn.execute(step["code"]).fetchdf()
-    state["artifacts"][step["output_alias"]] = frame
-    return _summarize_artifact(step["output_alias"], frame)
+    conn = new_duckdb_connection(state.get("dataset_context"))
+    try:
+        _register_artifacts(conn, state)
+        frame = conn.execute(step["code"]).fetchdf()
+        state["artifacts"][step["output_alias"]] = frame
+        return _summarize_artifact(step["output_alias"], frame)
+    finally:
+        conn.close()
 
 
 def _execute_pandas(state: AnalysisState, step: dict[str, Any]) -> ArtifactSummary:
-    context = get_semantic_context()
+    context = get_semantic_context(state.get("source_ids"))
     local_env: dict[str, Any] = {
         **context.raw_views,
         **context.semantic_views,
@@ -112,26 +115,29 @@ def preflight_compiled_plan(state: AnalysisState, compiled_plan: dict[str, Any])
     Steps are checked in order so later queries can reference earlier output aliases.
     """
 
-    conn = new_duckdb_connection()
-    _register_artifacts(conn, state)
-    rows = list(compiled_plan.get("plan") or [])
-    rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
+    conn = new_duckdb_connection(state.get("dataset_context"))
+    try:
+        _register_artifacts(conn, state)
+        rows = list(compiled_plan.get("plan") or [])
+        rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
 
-    for row in rows:
-        internal = compiled_plan_row_to_internal(row)
-        sql = internal["code"].strip().rstrip(";")
-        try:
-            preview = conn.execute(f"SELECT * FROM ({sql}) AS __planera_preflight LIMIT 0").fetchdf()
-            conn.register(internal["output_alias"], preview)
-        except Exception as exc:
-            return {
-                "status": "failed",
-                "failed_step_id": internal["id"],
-                "error": str(exc),
-                "query": internal["code"],
-            }
+        for row in rows:
+            internal = compiled_plan_row_to_internal(row)
+            sql = internal["code"].strip().rstrip(";")
+            try:
+                preview = conn.execute(f"SELECT * FROM ({sql}) AS __planera_preflight LIMIT 0").fetchdf()
+                conn.register(internal["output_alias"], preview)
+            except Exception as exc:
+                return {
+                    "status": "failed",
+                    "failed_step_id": internal["id"],
+                    "error": str(exc),
+                    "query": internal["code"],
+                }
 
-    return {"status": "success"}
+        return {"status": "success"}
+    finally:
+        conn.close()
 
 
 def _try_sql_step(

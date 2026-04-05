@@ -26,8 +26,12 @@ export function UploadCard({ asset }: UploadCardProps) {
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
           {asset.rows ? <span className="rounded-full bg-surface px-3 py-1">{asset.rows.toLocaleString()} rows</span> : null}
           {asset.columns ? <span className="rounded-full bg-surface px-3 py-1">{asset.columns} columns</span> : null}
+          {asset.relationCount ? <span className="rounded-full bg-surface px-3 py-1">{asset.relationCount} relations</span> : null}
         </div>
       )}
+      {asset.primaryRelationName ? (
+        <p className="mt-3 text-xs text-muted">Primary relation: {asset.primaryRelationName}</p>
+      ) : null}
     </Card>
   );
 }

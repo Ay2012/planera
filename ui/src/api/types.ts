@@ -34,6 +34,7 @@ export interface InspectionResponse {
 /** Body for the server's stateless `POST /analyze` (debug only — the UI sends `POST /chat` instead). */
 export interface AnalyzeApiRequest {
   query: string;
+  source_ids?: string[];
 }
 
 export interface AnalyzeTraceEvent {
