@@ -84,13 +84,13 @@ def profile_upload(filename: str, content: bytes) -> UploadedAsset:
     return asset
 
 
-def store_inspection(prompt: str, response: AnalyzeResponse) -> str:
-    """Build and store an inspection payload for later retrieval."""
+def store_inspection(prompt: str, response: AnalyzeResponse) -> tuple[str, InspectionData]:
+    """Build and store an inspection payload in memory for same-session retrieval."""
 
     inspection = _build_inspection(_short_id("inspect"), prompt, response)
     with _STORE_LOCK:
         _INSPECTIONS[inspection.id] = inspection
-    return inspection.id
+    return inspection.id, inspection
 
 
 def get_inspection(inspection_id: str) -> InspectionData | None:

@@ -6,11 +6,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.workspace import clear_workspace_state
+from app.config import get_settings
+from app.db.session import reset_engine_and_session
 from app.main import app
 from app.schemas import AnalyzeResponse
 
 
-client = TestClient(app)
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "api_test.sqlite"))
+    get_settings.cache_clear()
+    reset_engine_and_session()
+    with TestClient(app) as test_client:
+        yield test_client
+    get_settings.cache_clear()
+    reset_engine_and_session()
 
 
 @pytest.fixture(autouse=True)
@@ -37,21 +47,21 @@ def test_analyze_response_accepts_skipped_trace() -> None:
     assert resp.trace[0].status == "skipped"
 
 
-def test_health_endpoint() -> None:
+def test_health_endpoint(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
 
 
-def test_sample_questions_endpoint() -> None:
+def test_sample_questions_endpoint(client: TestClient) -> None:
     response = client.get("/sample-questions")
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["questions"]) >= 3
 
 
-def test_analyze_endpoint_structure() -> None:
+def test_analyze_endpoint_structure(client: TestClient) -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
             "analysis": "## Summary\nPipeline velocity improved.\n",
@@ -80,14 +90,14 @@ def test_analyze_endpoint_structure() -> None:
         }
 
     app.dependency_overrides = {}
-    import app.api.routes as routes
+    import app.services.analysis_run as analysis_run
 
-    original = routes.run_analysis
-    routes.run_analysis = fake_run_analysis
+    original = analysis_run.run_analysis
+    analysis_run.run_analysis = fake_run_analysis
     try:
         response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
     finally:
-        routes.run_analysis = original
+        analysis_run.run_analysis = original
     assert response.status_code == 200
     payload = response.json()
     assert {"analysis", "trace", "executed_steps", "errors", "inspection_id"} <= payload.keys()
@@ -97,18 +107,18 @@ def test_analyze_endpoint_structure() -> None:
     assert isinstance(payload["inspection_id"], str)
 
 
-def test_analyze_endpoint_returns_http_500_on_failure() -> None:
+def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         raise RuntimeError("planner exploded")
 
-    import app.api.routes as routes
+    import app.services.analysis_run as analysis_run
 
-    original = routes.run_analysis
-    routes.run_analysis = fake_run_analysis
+    original = analysis_run.run_analysis
+    analysis_run.run_analysis = fake_run_analysis
     try:
         response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
     finally:
-        routes.run_analysis = original
+        analysis_run.run_analysis = original
 
     assert response.status_code == 500
     payload = response.json()
@@ -116,7 +126,7 @@ def test_analyze_endpoint_returns_http_500_on_failure() -> None:
     assert payload["detail"]["error"] == "planner exploded"
 
 
-def test_upload_endpoint_profiles_csv() -> None:
+def test_upload_endpoint_profiles_csv(client: TestClient) -> None:
     response = client.post(
         "/uploads",
         files={"file": ("pipeline.csv", BytesIO(b"stage,amount\nopen,10\nwon,25\n"), "text/csv")},
@@ -132,7 +142,7 @@ def test_upload_endpoint_profiles_csv() -> None:
     assert payload["asset"]["status"] == "verified"
 
 
-def test_inspection_endpoint_returns_stored_inspection() -> None:
+def test_inspection_endpoint_returns_stored_inspection(client: TestClient) -> None:
     def fake_run_analysis(query: str) -> dict:  # noqa: ARG001
         return {
             "analysis": "## Summary\nPipeline velocity improved.\n",
@@ -160,14 +170,14 @@ def test_inspection_endpoint_returns_stored_inspection() -> None:
             "errors": [],
         }
 
-    import app.api.routes as routes
+    import app.services.analysis_run as analysis_run
 
-    original = routes.run_analysis
-    routes.run_analysis = fake_run_analysis
+    original = analysis_run.run_analysis
+    analysis_run.run_analysis = fake_run_analysis
     try:
         analyze_response = client.post("/analyze", json={"query": "Why did pipeline velocity drop this week?"})
     finally:
-        routes.run_analysis = original
+        analysis_run.run_analysis = original
 
     inspection_id = analyze_response.json()["inspection_id"]
     response = client.get(f"/inspections/{inspection_id}")
@@ -180,7 +190,7 @@ def test_inspection_endpoint_returns_stored_inspection() -> None:
     assert payload["inspection"]["trace"][0]["label"] == "Query Planning"
 
 
-def test_inspection_endpoint_returns_404_for_unknown_id() -> None:
+def test_inspection_endpoint_returns_404_for_unknown_id(client: TestClient) -> None:
     response = client.get("/inspections/inspect_missing")
     assert response.status_code == 404
     assert response.json()["detail"]["message"] == "Inspection not found."

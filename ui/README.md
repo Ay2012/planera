@@ -5,13 +5,20 @@ Planera is a premium analytics copilot frontend built with React, TypeScript, Vi
 This app is designed to work against a separately hosted backend API and includes a dedicated service layer for:
 
 - authentication (JWT session against `POST /auth/login`, `POST /auth/signup`, `GET /auth/me`)
-- chat submission
+- **chat submission** via **`POST /chat`** (authenticated product path — the UI does not call `POST /analyze` for normal usage)
 - file uploads
 - inspection data
 - validation and trace metadata
 - conversation history (still mostly local/demo until a history API exists)
 
 When the backend is unavailable, the UI can fall back to seeded demo data so the product remains demo-ready.
+
+### Primary vs debug API (backend)
+
+| Backend path | Used by this UI for normal signed-in flows? |
+|--------------|---------------------------------------------|
+| **`POST /chat`** | **Yes** — every real analysis turn goes here (`src/api/chat.ts`). |
+| **`POST /analyze`** | **No** — stateless debug endpoint on the server only (Swagger/curl/Postman). Same analysis shape may appear embedded in `/chat` responses or mapped in TypeScript as `AnalyzeApiResponse` — that is a **payload type name**, not an HTTP call to `/analyze`. |
 
 ## Getting Started
 
@@ -121,14 +128,13 @@ The frontend keeps request logic out of presentational components. Update endpoi
 Current live contract:
 
 - `POST /auth/signup`, `POST /auth/login`, `GET /auth/me` — session and route protection
-- `POST /analyze` is used for real chat submissions
+- `POST /chat` — real analysis turns (persisted conversations and assistant messages)
+- `GET /conversations`, `GET /conversations/:id` — conversation list and thread hydration
 - `POST /uploads` profiles CSV and TSV workspace uploads
-- `GET /inspections/:id` fetches a stored inspection payload when it is not already cached client-side
+- `GET /inspections/:id` fetches a stored inspection payload when it is not already cached client-side (requires auth when the snapshot came from `/chat`)
 - `GET /sample-questions` can be wired for dynamic prompt suggestions
 
-Current gaps in the backend contract:
-
-- conversation history is currently local/demo until a backend history endpoint is introduced
+The backend still exposes **`POST /analyze`** for stateless debugging only; the **React app does not use it** for authenticated workspace usage.
 
 If you want the frontend to use only real backend data, set:
 

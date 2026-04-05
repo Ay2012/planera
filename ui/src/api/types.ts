@@ -31,6 +31,7 @@ export interface InspectionResponse {
   fallback: boolean;
 }
 
+/** Body for the server's stateless `POST /analyze` (debug only — the UI sends `POST /chat` instead). */
 export interface AnalyzeApiRequest {
   query: string;
 }
@@ -69,10 +70,65 @@ export interface AnalyzeExecutedStep {
   error?: string | null;
 }
 
+/**
+ * Analysis payload shape shared by `POST /chat` (and the debug `POST /analyze` response).
+ * Naming reflects backend fields, not a requirement to call `/analyze`.
+ */
 export interface AnalyzeApiResponse {
   analysis: string;
   trace: AnalyzeTraceEvent[];
   executed_steps: AnalyzeExecutedStep[];
   errors: AnalyzeErrorItem[];
   inspection_id?: string;
+}
+
+/** GET /conversations row (backend snake_case). */
+export interface ApiConversationSummary {
+  id: number;
+  title: string;
+  updated_at: string;
+  last_message_preview: string | null;
+}
+
+export interface ApiConversationsListResponse {
+  conversations: ApiConversationSummary[];
+}
+
+/** GET /conversations/{id} message (backend snake_case). */
+export interface ApiMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  metadata_json: Record<string, unknown> | null;
+}
+
+export interface ApiConversationPublic {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiConversationDetailResponse {
+  conversation: ApiConversationPublic;
+  messages: ApiMessage[];
+}
+
+/** POST /chat response (backend snake_case). */
+export interface ApiChatTurnResponse {
+  conversation: ApiConversationPublic;
+  assistant_message: {
+    id: number;
+    role: "assistant";
+    content: string;
+    created_at: string;
+    status: string;
+    metadata_json: Record<string, unknown> | null;
+  };
+  analysis: string;
+  trace: AnalyzeTraceEvent[];
+  executed_steps: AnalyzeExecutedStep[];
+  errors: AnalyzeErrorItem[];
+  inspection_id: string | null;
 }

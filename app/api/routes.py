@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
 
-from app.agent.graph import run_analysis
-from app.api.workspace import get_inspection, profile_upload, store_inspection
+from app.api.workspace import get_inspection, profile_upload
+from app.auth.deps import get_current_user_optional
 from app.config import get_settings
-from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionResponse, SampleQuestionsResponse, UploadResponse
+from app.db.session import get_db
+from app.models.conversation import Conversation
+from app.models.inspection_snapshot import InspectionSnapshot
+from app.models.user import User
+from app.schemas import AnalyzeRequest, AnalyzeResponse, HealthResponse, InspectionData, InspectionResponse, SampleQuestionsResponse, UploadResponse
+from app.services.analysis_run import run_stored_analysis
 from app.utils.constants import SAMPLE_QUESTIONS
 from app.utils.logging import get_logger
 
@@ -44,8 +50,34 @@ async def upload_dataset(file: UploadFile = File(...)) -> UploadResponse:
 
 
 @router.get("/inspections/{inspection_id}", response_model=InspectionResponse)
-def inspection_details(inspection_id: str) -> InspectionResponse:
-    """Return a stored inspection payload for the requested analysis."""
+def inspection_details(
+    inspection_id: str,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+) -> InspectionResponse:
+    """Return inspection detail.
+
+    Prefer rows loaded from ``inspection_snapshots`` (written by ``POST /chat``); those require auth.
+    Otherwise falls back to the in-memory store populated by a stateless ``POST /analyze`` run in
+    the same server process (debug/demo).
+    """
+
+    row = db.get(InspectionSnapshot, inspection_id)
+    if row is not None:
+        if current_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"message": "Authentication required to view this inspection."},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        conv = db.get(Conversation, row.conversation_id)
+        if conv is None or conv.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Not allowed to view this inspection."},
+            )
+        inspection = InspectionData.model_validate(row.payload_json)
+        return InspectionResponse(inspection=inspection, fallback=False)
 
     inspection = get_inspection(inspection_id)
     if inspection is None:
@@ -53,26 +85,26 @@ def inspection_details(inspection_id: str) -> InspectionResponse:
     return InspectionResponse(inspection=inspection, fallback=False)
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
+@router.post(
+    "/analyze",
+    response_model=AnalyzeResponse,
+    tags=["debug"],
+    deprecated=True,
+    summary="Stateless analysis (debug / manual testing only)",
+    description=(
+        "**Not the primary product API.** For normal use, authenticated clients should call "
+        "`POST /chat`, which persists conversations, messages, and inspection snapshots.\n\n"
+        "This endpoint runs the same analytics pipeline without auth, without database persistence, "
+        "and keeps the inspection payload only in process memory (lost on restart). Use it for "
+        "local debugging, Swagger/Postman checks, and quick stateless demos.\n\n"
+        "Response shape aligns with the analysis/trace/steps portion of `POST /chat`."
+    ),
+)
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    """Execute the analytics workflow for a user query."""
+    """Run analytics without persistence (see OpenAPI ``description`` — prefer ``POST /chat`` for product flows)."""
 
     try:
-        state = run_analysis(request.query)
-        base_response = AnalyzeResponse(
-            analysis=state["analysis"],
-            trace=state.get("trace", []),
-            executed_steps=state.get("executed_steps", []),
-            errors=state.get("errors", []),
-        )
-        inspection_id = store_inspection(request.query, base_response)
-        return AnalyzeResponse(
-            analysis=base_response.analysis,
-            trace=base_response.trace,
-            executed_steps=base_response.executed_steps,
-            errors=base_response.errors,
-            inspection_id=inspection_id,
-        )
+        return run_stored_analysis(request.query).response
     except Exception as exc:  # pragma: no cover - defensive API fallback
         logger.exception("Analyze request failed", extra={"query": request.query})
         settings = get_settings()
