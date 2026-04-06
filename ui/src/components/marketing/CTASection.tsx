@@ -5,7 +5,7 @@ import { PageContainer } from "@/components/shared/PageContainer";
 
 export function CTASection() {
   return (
-    <section className="py-20" id="pricing">
+    <section className="py-20">
       <PageContainer>
         <Card elevated className="overflow-hidden rounded-[34px] bg-hero-glow p-8 sm:p-12">
           <div className="max-w-2xl">
