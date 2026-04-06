@@ -5,7 +5,7 @@ import { ChatThread } from "@/components/app/ChatThread";
 import { InspectionPanel } from "@/components/app/InspectionPanel";
 import { InsightCard } from "@/components/app/InsightCard";
 import { Sidebar } from "@/components/app/Sidebar";
-import { UploadCard } from "@/components/app/UploadCard";
+import { UploadsPanel } from "@/components/app/UploadsPanel";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
@@ -16,13 +16,13 @@ import { Spinner } from "@/components/shared/Spinner";
 import { savedAnalyses } from "@/data/mockInsights";
 import { env, isDemoOnlyMode } from "@/config/env";
 import { useChat } from "@/hooks/useChat";
+import { useActiveUploads } from "@/hooks/useActiveUploads";
 import { useInspectionPanel } from "@/hooks/useInspectionPanel";
 import { useResponsiveSidebar } from "@/hooks/useResponsiveSidebar";
 import { useUpload } from "@/hooks/useUpload";
 import { AppLayout } from "@/layouts/AppLayout";
 import { formatCompactNumber } from "@/lib/utils";
 import { uiStore } from "@/store/uiStore";
-import type { UploadedAsset } from "@/types/upload";
 
 type SidebarSection = "chats" | "uploads" | "saved" | "dashboards";
 
@@ -35,7 +35,15 @@ const dashboardMetrics = [
 
 export function AppPage() {
   const { isMobile, collapsed, mobileOpen, closeMobileSidebar, toggleSidebar } = useResponsiveSidebar();
-  const { uploads, isUploading, error: uploadError, latestUploadMode, uploadFile } = useUpload();
+  const {
+    uploads,
+    isUploading,
+    deletingUploadId,
+    error: uploadError,
+    latestUploadMode,
+    uploadFile,
+    deleteUpload,
+  } = useUpload();
   const {
     conversations,
     activeConversation,
@@ -50,8 +58,8 @@ export function AppPage() {
   } = useChat();
   const inspection = useInspectionPanel();
   const [draft, setDraft] = useState("");
-  const [attachments, setAttachments] = useState<UploadedAsset[]>([]);
   const [activeSection, setActiveSection] = useState<SidebarSection>(() => uiStore.getActiveSection() as SidebarSection);
+  const { activeUploads, removeActiveUpload } = useActiveUploads(uploads);
 
   const currentTitle = useMemo(() => {
     if (activeSection === "uploads") return "Data uploads";
@@ -100,21 +108,28 @@ export function AppPage() {
     uiStore.setActiveSection(section);
   };
 
-  const handleUpload = async (file: File) => {
+  const handleChatUpload = async (file: File) => {
     try {
-      const asset = await uploadFile(file);
-      setAttachments((current) => [asset, ...current].slice(0, 2));
+      await uploadFile(file);
       handleSectionChange("chats");
     } catch {
       // Upload errors are surfaced through the hook state and UI.
     }
   };
 
+  const handleUploadsSectionUpload = async (file: File) => {
+    try {
+      await uploadFile(file);
+      handleSectionChange("uploads");
+    } catch {
+      // Upload errors are surfaced through the hook state and UI.
+    }
+  };
+
   const handleSubmit = async () => {
-    const success = await sendPrompt(draft, attachments);
+    const success = await sendPrompt(draft, activeUploads);
     if (success) {
       setDraft("");
-      setAttachments([]);
     }
     handleSectionChange("chats");
   };
@@ -150,9 +165,9 @@ export function AppPage() {
           setDraft(prompt);
           handleSectionChange("chats");
         }}
-        onUpload={(file) => void handleUpload(file)}
-        onRemoveAttachment={(assetId) => setAttachments((current) => current.filter((asset) => asset.id !== assetId))}
-        attachments={attachments}
+        onUpload={(file) => void handleChatUpload(file)}
+        onRemoveAttachment={removeActiveUpload}
+        attachments={activeUploads}
         isSubmitting={isSubmitting}
         isUploading={isUploading}
       />
@@ -160,21 +175,14 @@ export function AppPage() {
   );
 
   const uploadsView = (
-    <PageContainer className="min-w-0 space-y-6 px-4 py-6 sm:px-6">
-      {uploadError ? <ErrorState title="Upload issue" description={uploadError} /> : null}
-      {uploads.length ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {uploads.map((asset) => (
-            <UploadCard key={asset.id} asset={asset} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title="No uploads yet"
-          description="Upload a CSV or TSV from the chat composer to profile it here and keep the workspace status grounded in real data."
-        />
-      )}
-    </PageContainer>
+    <UploadsPanel
+      uploads={uploads}
+      error={uploadError}
+      isUploading={isUploading}
+      deletingUploadId={deletingUploadId}
+      onUpload={(file) => void handleUploadsSectionUpload(file)}
+      onDelete={(assetId) => void deleteUpload(assetId)}
+    />
   );
 
   const savedView = (
@@ -243,7 +251,6 @@ export function AppPage() {
       sidebar={
         <Sidebar
           conversations={conversations}
-          uploads={uploads}
           activeSection={activeSection}
           activeConversationId={activeConversationId}
           collapsed={collapsed}

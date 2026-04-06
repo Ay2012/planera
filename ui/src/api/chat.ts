@@ -9,6 +9,7 @@ import { requestWithAuth, ApiError } from "@/api/client";
 import { cacheInspection } from "@/api/inspections";
 import { conversationTitleFromPrompt, mapAnalyzeResponseToUi } from "@/api/mappers";
 import type {
+  AnalyzeApiRequest,
   AnalyzeApiResponse,
   ApiChatTurnResponse,
   ApiConversationDetailResponse,
@@ -143,9 +144,12 @@ export async function submitChatPrompt(payload: ChatRequest, accessToken: string
   }
 
   try {
-    const body: Record<string, unknown> = { query: payload.prompt };
+    const body: AnalyzeApiRequest & { conversation_id?: number } = { query: payload.prompt };
     if (payload.conversationId && isBackendConversationId(payload.conversationId)) {
       body.conversation_id = Number.parseInt(payload.conversationId, 10);
+    }
+    if (payload.attachmentIds?.length) {
+      body.source_ids = payload.attachmentIds;
     }
 
     const raw = await requestWithAuth<ApiChatTurnResponse>("/chat", accessToken, {
@@ -177,6 +181,9 @@ export async function submitChatPrompt(payload: ChatRequest, accessToken: string
       fallback: false,
     };
   } catch (error) {
+    if (error instanceof ApiError && error.status && error.status >= 400 && error.status < 500) {
+      throw error;
+    }
     if (!shouldFallbackToDemo) throw error;
 
     await sleep(850);

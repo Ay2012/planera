@@ -10,5 +10,7 @@ export interface UploadedAsset {
   status: UploadStatus;
   rows?: number;
   columns?: number;
+  relationCount?: number;
+  primaryRelationName?: string;
   summary?: string;
 }

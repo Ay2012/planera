@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import BytesIO
-from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
 
-import pandas as pd
-
+from app.data.registry import clear_source_registry, ingest_source
+from app.data.semantic_model import clear_semantic_context_cache
 from app.schemas import AnalyzeResponse, ArtifactSummary, InspectionData, MetadataItem, ResultTableData, TraceEntry, UploadedAsset, ValidationCheck
 
 
@@ -29,58 +25,22 @@ STEP_LABELS: dict[str, str] = {
 
 _STORE_LOCK = Lock()
 _INSPECTIONS: dict[str, InspectionData] = {}
-_UPLOAD_DIR = Path(tempfile.gettempdir()) / "planera_uploads"
-
-
-@dataclass
-class StoredUpload:
-    """Backend-only metadata for uploaded files."""
-
-    asset: UploadedAsset
-    file_path: Path
-
-
-_UPLOADS: dict[str, StoredUpload] = {}
 
 
 def clear_workspace_state() -> None:
     """Reset in-memory upload/inspection storage for tests."""
 
     with _STORE_LOCK:
-        for stored in _UPLOADS.values():
-            if stored.file_path.exists():
-                stored.file_path.unlink(missing_ok=True)
-        _UPLOADS.clear()
         _INSPECTIONS.clear()
+    clear_source_registry()
+    clear_semantic_context_cache()
 
 
 def profile_upload(filename: str, content: bytes) -> UploadedAsset:
-    """Profile an uploaded CSV/TSV file and persist it to a temp location."""
+    """Persist an uploaded structured dataset to the source registry."""
 
-    safe_name = Path(filename or "upload.csv").name
-    frame = _read_uploaded_frame(safe_name, content)
-    row_count = int(len(frame))
-    column_count = int(len(frame.columns))
-    asset = UploadedAsset(
-        id=_short_id("upload"),
-        name=safe_name,
-        type=_derive_file_type(safe_name),
-        source="Workspace upload",
-        sizeLabel=_bytes_to_size(len(content)),
-        uploadedAt=_now_iso(),
-        status="verified",
-        rows=row_count,
-        columns=column_count,
-        summary=_build_upload_summary(frame, row_count, column_count),
-    )
-
-    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = _UPLOAD_DIR / f"{asset.id}_{safe_name}"
-    file_path.write_bytes(content)
-
-    with _STORE_LOCK:
-        _UPLOADS[asset.id] = StoredUpload(asset=asset, file_path=file_path)
-
+    asset = ingest_source(filename, content)
+    clear_semantic_context_cache()
     return asset
 
 
@@ -98,35 +58,6 @@ def get_inspection(inspection_id: str) -> InspectionData | None:
 
     with _STORE_LOCK:
         return _INSPECTIONS.get(inspection_id)
-
-
-def _read_uploaded_frame(filename: str, content: bytes) -> pd.DataFrame:
-    if not content:
-        raise ValueError("Uploaded file is empty.")
-
-    suffix = Path(filename).suffix.lower()
-    buffer = BytesIO(content)
-
-    try:
-        if suffix in {".csv"}:
-            return pd.read_csv(buffer)
-        if suffix in {".tsv", ".tab"}:
-            return pd.read_csv(buffer, sep="\t")
-        if suffix in {".txt"}:
-            return pd.read_csv(buffer, sep=None, engine="python")
-    except Exception as exc:  # pragma: no cover - pandas error details vary
-        raise ValueError(f"Could not parse {filename} as a structured text dataset.") from exc
-
-    raise ValueError("Only CSV, TSV, TAB, and TXT uploads are currently supported.")
-
-
-def _build_upload_summary(frame: pd.DataFrame, row_count: int, column_count: int) -> str:
-    preview_columns = [str(column) for column in list(frame.columns[:4])]
-    column_label = ", ".join(preview_columns)
-    suffix = "..." if column_count > 4 else ""
-    if column_label:
-        return f"Profiled {row_count} rows across {column_count} columns. Leading columns: {column_label}{suffix}."
-    return f"Profiled {row_count} rows across {column_count} columns."
 
 
 def _build_inspection(inspection_id: str, prompt: str, response: AnalyzeResponse) -> InspectionData:
@@ -461,21 +392,6 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
 
 def _short_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:8]}"
-
-
-def _derive_file_type(filename: str) -> str:
-    suffix = Path(filename).suffix.lstrip(".").upper()
-    return suffix or "FILE"
-
-
-def _bytes_to_size(num_bytes: int) -> str:
-    if num_bytes < 1024:
-        return f"{num_bytes} B"
-    if num_bytes < 1024 * 1024:
-        return f"{num_bytes / 1024:.1f} KB"
-    if num_bytes < 1024 * 1024 * 1024:
-        return f"{num_bytes / (1024 * 1024):.1f} MB"
-    return f"{num_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
 def _now_iso() -> str:

@@ -1,32 +1,42 @@
-import { request } from "@/api/client";
+import { ApiError, requestWithAuth } from "@/api/client";
 import type { UploadResponse } from "@/api/types";
-import { createUploadedAsset } from "@/data/mockUploads";
-import { shouldFallbackToDemo } from "@/config/env";
-import { sleep } from "@/lib/utils";
+import type { UploadedAsset } from "@/types/upload";
+import { isSupportedUploadFile } from "@/lib/uploads";
 
-export async function uploadDataset(file: File): Promise<UploadResponse> {
+export async function fetchUploads(accessToken: string | null): Promise<UploadedAsset[]> {
+  if (!accessToken) {
+    throw new ApiError("Not authenticated.");
+  }
+
+  return requestWithAuth<UploadedAsset[]>("/uploads", accessToken);
+}
+
+
+export async function uploadDataset(file: File, accessToken: string | null): Promise<UploadResponse> {
+  if (!isSupportedUploadFile(file)) {
+    throw new ApiError("Only CSV and JSON files are supported.");
+  }
+  if (!accessToken) {
+    throw new ApiError("Not authenticated.");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
 
-  try {
-    const response = await request<UploadResponse>("/uploads", {
-      method: "POST",
-      body: formData,
-    });
-    return { ...response, fallback: false };
-  } catch (error) {
-    if (!shouldFallbackToDemo) throw error;
-    await sleep(480);
-    return {
-      asset: {
-        ...createUploadedAsset(file),
-        source: "Demo fallback",
-        status: "verified",
-        rows: 12840,
-        columns: 9,
-        summary: "Demo fallback profiling completed. The uploaded file is shown with generated preview statistics.",
-      },
-      fallback: true,
-    };
+  const response = await requestWithAuth<UploadResponse>("/uploads", accessToken, {
+    method: "POST",
+    body: formData,
+  });
+  return { ...response, fallback: false };
+}
+
+
+export async function deleteUpload(sourceId: string, accessToken: string | null): Promise<void> {
+  if (!accessToken) {
+    throw new ApiError("Not authenticated.");
   }
+
+  await requestWithAuth(`/uploads/${sourceId}`, accessToken, {
+    method: "DELETE",
+  });
 }

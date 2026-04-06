@@ -30,6 +30,7 @@ from app.schemas import (
 )
 from app.services.analysis_run import run_stored_analysis
 from app.services.inspection_persistence import save_inspection_for_assistant_message
+from app.uploads.service import get_authorized_source_ids
 from app.utils.logging import get_logger
 
 
@@ -146,8 +147,19 @@ def chat_turn(
     db.add(user_msg)
     db.flush()
 
+    requested_source_ids = list(dict.fromkeys(body.source_ids or []))
+    if requested_source_ids:
+        valid_source_ids = get_authorized_source_ids(db, current_user, requested_source_ids)
+        if len(valid_source_ids) != len(requested_source_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Attach a valid uploaded data source before running analysis."},
+            )
+    else:
+        valid_source_ids = None
+
     try:
-        analysis_run = run_stored_analysis(body.query)
+        analysis_run = run_stored_analysis(body.query, source_ids=valid_source_ids)
         analysis_result = analysis_run.response
         inspection_payload = analysis_run.inspection
     except Exception as exc:  # pragma: no cover - defensive API fallback

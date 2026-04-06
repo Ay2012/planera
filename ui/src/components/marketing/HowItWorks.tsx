@@ -10,7 +10,7 @@ const steps = [
   {
     number: "02",
     title: "Connect or upload data",
-    description: "Point the workspace at a database or bring in CSV and TSV files for quick analysis.",
+    description: "Point the workspace at a database or bring in CSV and JSON files for quick analysis.",
   },
   {
     number: "03",

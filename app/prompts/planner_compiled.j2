@@ -10,6 +10,9 @@ Rules:
 - Use only these registered relation names: {{ relation_names_json }}
 - Use exact column names only. Never invent, normalize, paraphrase, or rename a column.
 - Use semantic mappings only to translate user language into exact schema fields.
+- Prefer relations where "is_primary" is true before reaching for child relations.
+- Only join relations when the schema subset exposes an explicit path in "join_keys".
+- For nested JSON child relations, use the exact join columns from "join_keys" instead of guessing parent-child keys.
 - Do not assume the question premise is true. First verify the main metric or comparison before planning causal or grouped breakdowns.
 - Prefer SQL over multiple trivial splits; combine logic when one query suffices.
 - No imports, file I/O, network calls, or plotting.

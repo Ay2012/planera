@@ -1,19 +1,16 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { Drawer } from "@/components/shared/Drawer";
-import { UploadCard } from "@/components/app/UploadCard";
 import { useAuth } from "@/hooks/useAuth";
 import { sidebarNavItems } from "@/lib/constants";
 import { classNames } from "@/lib/classNames";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Conversation } from "@/types/chat";
-import type { UploadedAsset } from "@/types/upload";
 
 type SidebarSection = "chats" | "uploads" | "saved" | "dashboards";
 
 interface SidebarProps {
   conversations: Conversation[];
-  uploads: UploadedAsset[];
   activeSection: SidebarSection;
   activeConversationId: string;
   collapsed: boolean;
@@ -67,7 +64,6 @@ function BrandMark({ showExpandCue = false }: { showExpandCue?: boolean }) {
 
 function SidebarContent({
   conversations,
-  uploads,
   activeSection,
   activeConversationId,
   collapsed,
@@ -199,29 +195,6 @@ function SidebarContent({
       ) : (
         <div className="flex-1" />
       )}
-
-      {!collapsed ? (
-        <div className="min-w-0 shrink-0 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Recent uploads</p>
-            <button
-              type="button"
-              onClick={() => {
-                onSelectSection("uploads");
-                onAfterSelect?.();
-              }}
-              className="text-xs text-accent"
-            >
-              View all
-            </button>
-          </div>
-          <div className="space-y-3">
-            {uploads.slice(0, 2).map((asset) => (
-              <UploadCard key={asset.id} asset={asset} />
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {!collapsed && user ? <p className="truncate px-1 text-xs text-muted">{user.email}</p> : null}
 

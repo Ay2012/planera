@@ -28,7 +28,7 @@ def _append_error(state: AnalysisState, step: str, message: str, recoverable: bo
 def load_schema_context_node(state: AnalysisState) -> AnalysisState:
     step_name = "load_schema_context_node"
     _append_trace(state, step_name, "started", {})
-    context = get_semantic_context()
+    context = get_semantic_context(state.get("source_ids"))
     state["dataset_context"] = context.schema_manifest
     _append_trace(
         state,
@@ -162,8 +162,8 @@ def build_graph():
     return graph.compile()
 
 
-def run_analysis(query: str) -> AnalysisState:
+def run_analysis(query: str, source_ids: list[str] | None = None) -> AnalysisState:
     """Execute the full workflow for a single user query."""
 
     workflow = build_graph()
-    return workflow.invoke(create_initial_state(query))
+    return workflow.invoke(create_initial_state(query, source_ids=source_ids))

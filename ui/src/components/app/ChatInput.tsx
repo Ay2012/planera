@@ -3,6 +3,7 @@ import { Button } from "@/components/shared/Button";
 import { Textarea } from "@/components/shared/Textarea";
 import { PromptChips } from "@/components/app/PromptChips";
 import { Spinner } from "@/components/shared/Spinner";
+import { UPLOAD_ACCEPT } from "@/lib/uploads";
 import type { UploadedAsset } from "@/types/upload";
 
 interface ChatInputProps {
@@ -110,6 +111,7 @@ export function ChatInput({
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
+                accept={UPLOAD_ACCEPT}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) {
@@ -122,7 +124,7 @@ export function ChatInput({
                 {isUploading ? <Spinner className="h-4 w-4" /> : null}
                 Attach file
               </Button>
-              <span className="min-w-0 text-xs text-muted">CSV, TSV, SQL exports, or connected data sources</span>
+              <span className="min-w-0 text-xs text-muted">CSV or JSON only</span>
             </div>
             <Button onClick={onSubmit} disabled={isSubmitting || value.trim().length === 0}>
               {isSubmitting ? <Spinner className="h-4 w-4 border-white/30 border-t-white" /> : null}

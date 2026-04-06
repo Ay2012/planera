@@ -38,7 +38,11 @@ def _field_terms(*values: str) -> set[str]:
 
 
 def _column_relevance_score(column: dict[str, Any], question_terms: set[str]) -> int:
-    column_terms = _field_terms(column.get("name", ""))
+    column_terms = _field_terms(
+        column.get("name", ""),
+        column.get("original_name", ""),
+        column.get("source_path", ""),
+    )
     for hint in column.get("semantic_hints") or []:
         column_terms.update(_field_terms(hint))
 
@@ -50,10 +54,20 @@ def _column_relevance_score(column: dict[str, Any], question_terms: set[str]) ->
 
 
 def _relation_relevance_score(relation: dict[str, Any], question_terms: set[str]) -> int:
-    score = len(_field_terms(relation.get("name", ""), relation.get("grain", "")) & question_terms) * 4
+    score = len(
+        _field_terms(
+            relation.get("name", ""),
+            relation.get("grain", ""),
+            relation.get("source_name", ""),
+            json.dumps(relation.get("lineage", {}), default=str),
+        )
+        & question_terms
+    ) * 4
     score += sum(_column_relevance_score(column, question_terms) for column in relation.get("columns") or [])
     for mapping in relation.get("semantic_mappings") or []:
         score += len(_field_terms(mapping.get("concept", "")) & question_terms) * 5
+    if relation.get("is_primary"):
+        score += 3
     return score
 
 

@@ -138,6 +138,10 @@ export function useChat() {
   const sendPrompt = async (prompt: string, attachments: UploadedAsset[] = []) => {
     const trimmed = prompt.trim();
     if (!trimmed) return false;
+    if (attachments.length === 0) {
+      setError("Upload and attach at least one CSV or JSON file before running analysis.");
+      return false;
+    }
 
     let conversationId = activeConversationId;
 

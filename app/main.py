@@ -23,10 +23,13 @@ async def lifespan(_app: FastAPI):
     """Create database tables on startup (SQLite file demo; no Alembic in this phase)."""
 
     from app.db.base import Base
+    from app.db.schema_compat import ensure_sqlite_schema_compatibility
     from app.db.session import get_engine
-    from app.models import Conversation, InspectionSnapshot, Message, User  # noqa: F401
+    from app.models import Conversation, InspectionSnapshot, Message, UploadRecord, User  # noqa: F401
 
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    ensure_sqlite_schema_compatibility(engine)
     yield
 
 
