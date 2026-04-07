@@ -146,7 +146,7 @@ def analyze(
     if not requested_source_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": "Upload and attach at least one CSV or JSON data source before running analysis."},
+            detail={"message": "Upload and attach at least one CSV, TSV, or JSON data source before running analysis."},
         )
 
     valid_source_ids = get_authorized_source_ids(db, current_user, requested_source_ids)

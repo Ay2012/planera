@@ -193,6 +193,25 @@ def test_upload_endpoint_profiles_csv(client: TestClient, tmp_path) -> None:
     assert [asset["id"] for asset in uploads_response.json()] == [payload["asset"]["id"]]
 
 
+def test_upload_endpoint_profiles_tsv(client: TestClient, tmp_path) -> None:
+    token = _signup(client, "upload-tsv@example.com")
+    response = client.post(
+        "/uploads",
+        files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\nwon\t25\n"), "text/tab-separated-values")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["fallback"] is False
+    assert payload["asset"]["name"] == "pipeline.tsv"
+    assert payload["asset"]["type"] == "TSV"
+    assert payload["asset"]["rows"] == 2
+    assert payload["asset"]["columns"] == 2
+    assert payload["asset"]["relationCount"] == 1
+    assert any((tmp_path / "uploads").rglob("original.tsv"))
+
+
 def test_upload_endpoint_profiles_json(client: TestClient) -> None:
     token = _signup(client, "upload-json@example.com")
     response = client.post(
@@ -221,12 +240,12 @@ def test_upload_endpoint_rejects_unsupported_file_types(client: TestClient) -> N
     token = _signup(client, "upload-unsupported@example.com")
     response = client.post(
         "/uploads",
-        files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\n"), "text/tab-separated-values")},
+        files={"file": ("pipeline.xlsx", BytesIO(b"not-a-real-xlsx"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "Only CSV and JSON uploads are currently supported."
+    assert response.json()["detail"]["message"] == "Only CSV, TSV, and JSON uploads are currently supported."
 
 
 def test_upload_endpoint_migrates_legacy_uploads_table(tmp_path, monkeypatch) -> None:
@@ -434,7 +453,7 @@ def test_analyze_endpoint_requires_uploaded_source_before_run_analysis(client: T
         analysis_run.run_analysis = original
 
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "Upload and attach at least one CSV or JSON data source before running analysis."
+    assert response.json()["detail"]["message"] == "Upload and attach at least one CSV, TSV, or JSON data source before running analysis."
     assert called is False
 
 

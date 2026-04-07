@@ -1,12 +1,15 @@
-"""Compiled plan schema and planner retry behavior."""
+"""Planner-input contract tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
-from app.agent.planner import plan_compiled_query
-from app.agent.state import create_initial_state
+from app.agent.planner import _schema_subset_for_question, build_planner_input, get_llm_client, plan_compiled_query, repair_failed_step
 from app.config import get_settings
 from app.data.registry import clear_source_registry, ingest_source
-from app.data.semantic_model import clear_semantic_context_cache, get_semantic_context
+from app.data.semantic_model import clear_semantic_context_cache
 from app.schemas import CompiledPlan
 
 
@@ -42,118 +45,47 @@ def test_compiled_plan_normalizes_max_steps() -> None:
     assert plan.max_steps == 3
 
 
-def test_planner_retries_after_validation_error(monkeypatch) -> None:
-    good = {
-        "objective": "Segment counts",
-        "plan": [
-            {
-                "id": 1,
-                "purpose": "Count by segment",
-                "type": "sql",
-                "query": "SELECT 1 AS value",
-                "output_alias": "counts",
-            }
-        ],
-        "max_steps": 3,
-        "metric": "",
-        "metric_direction": "",
-    }
-    bad = {
-        "objective": "Too many",
-        "plan": good["plan"] * 4,
-        "max_steps": 3,
-        "metric": "",
-        "metric_direction": "",
-    }
+def test_build_planner_input_keeps_sources_separate_by_source_id() -> None:
+    first = ingest_source("orders.csv", b"order_id,amount\no1,100\n")
+    second = ingest_source("orders.csv", b"order_id,amount\no2,250\n")
 
-    class FlakyPlannerLLM:
-        def __init__(self) -> None:
-            self.calls = 0
+    planner_input = build_planner_input("Compare both uploads.", [first.id, second.id])
 
-        def generate_json(self, prompt: str, schema=None):  # noqa: ANN001, ARG002
-            self.calls += 1
-            if self.calls == 1:
-                return bad
-            return good
-
-    stub = FlakyPlannerLLM()
-    monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: stub)
-
-    state = create_initial_state("Compare segments")
-    state["dataset_context"] = {"reference_date": "2017-12-31", "relations": [], "views": []}
-    state = plan_compiled_query(state)
-
-    assert stub.calls == 2
-    assert state["compiled_plan"] is not None
-    assert len(state["compiled_plan"]["plan"]) == 1
+    assert len(planner_input.sources) == 2
+    assert {source.source_id for source in planner_input.sources} == {first.id, second.id}
+    assert all(len(source.tables) == 1 for source in planner_input.sources)
 
 
-def test_semantic_context_exposes_normalized_manifest() -> None:
-    asset = ingest_source("pipeline.csv", b"owner,pipeline_velocity_days\nAda,10\nBen,14\n")
-    manifest = get_semantic_context().schema_manifest
+def test_pipeline_velocity_field_is_treated_by_generic_structural_rules() -> None:
+    asset = ingest_source("pipeline.csv", b"owner,pipeline_velocity_days,created_at\nAda,10,2026-01-01\nBen,14,2026-01-02\n")
 
-    assert manifest["dialect"] == "duckdb"
-    assert manifest["relations"]
-    relation = next(relation for relation in manifest["relations"] if relation["name"] == asset.primaryRelationName)
-    assert relation["columns"]
-    assert relation["identifier_columns"]
-    assert relation["grain"]
+    planner_input = build_planner_input("Why did velocity change?", [asset.id])
+    table = planner_input.sources[0].tables[0]
+    role_by_name = {column.column_name: column.semantic_role for column in table.columns}
+
+    assert role_by_name["pipeline_velocity_days"] == "measure"
+    assert role_by_name["created_at"] == "time"
+    assert "semantic_mappings" not in planner_input.model_dump_json()
 
 
-def test_planner_retries_after_sql_preflight_failure(monkeypatch) -> None:
-    asset = ingest_source("pipeline.csv", b"owner,pipeline_velocity_days\nAda,10\nBen,14\n")
-    relation_name = asset.primaryRelationName
-    bad = {
-        "objective": "Analyze by sales agent",
-        "plan": [
-            {
-                "id": 1,
-                "purpose": "Break out velocity by agent",
-                "type": "sql",
-                "query": f"SELECT sales_agent, AVG(pipeline_velocity_days) AS avg_velocity_days FROM {relation_name} GROUP BY sales_agent",
-                "output_alias": "velocity_by_agent",
-            }
-        ],
-        "max_steps": 3,
-        "metric": "pipeline_velocity_days",
-        "metric_direction": "lower_is_better",
-    }
-    good = {
-        "objective": "Analyze by owner",
-        "plan": [
-            {
-                "id": 1,
-                "purpose": "Break out velocity by owner",
-                "type": "sql",
-                "query": f"SELECT owner, AVG(pipeline_velocity_days) AS avg_velocity_days FROM {relation_name} GROUP BY owner",
-                "output_alias": "velocity_by_owner",
-            }
-        ],
-        "max_steps": 3,
-        "metric": "pipeline_velocity_days",
-        "metric_direction": "lower_is_better",
-    }
+def test_planner_input_module_does_not_import_legacy_gtm_modules() -> None:
+    module_source = (Path(__file__).resolve().parents[1] / "app" / "data" / "planner_input.py").read_text()
 
-    class FlakyPlannerLLM:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.prompts: list[str] = []
+    assert "app.data.loader" not in module_source
+    assert "app.data.transforms" not in module_source
+    assert "app.data.mock_data" not in module_source
+    assert "app.utils.constants" not in module_source
 
-        def generate_json(self, prompt: str, schema=None):  # noqa: ANN001, ARG002
-            self.calls += 1
-            self.prompts.append(prompt)
-            if self.calls == 1:
-                return bad
-            return good
 
-    stub = FlakyPlannerLLM()
-    monkeypatch.setattr("app.agent.planner.get_llm_client", lambda: stub)
+def test_legacy_planner_runtime_entrypoints_raise_not_implemented() -> None:
+    with pytest.raises(NotImplementedError, match="Planner LLM access"):
+        get_llm_client()
 
-    state = create_initial_state("Why did pipeline velocity drop this week by sales agent?")
-    state["dataset_context"] = get_semantic_context([asset.id]).schema_manifest
-    state = plan_compiled_query(state)
+    with pytest.raises(NotImplementedError, match="Compiled planner runtime"):
+        plan_compiled_query({"query": "test"})
 
-    assert stub.calls == 2
-    assert "failed SQL preflight validation" in stub.prompts[1]
-    assert state["compiled_plan"] is not None
-    assert "owner" in state["compiled_plan"]["plan"][0]["query"]
+    with pytest.raises(NotImplementedError, match="Planner repair runtime"):
+        repair_failed_step({}, {})
+
+    with pytest.raises(NotImplementedError, match="Trimmed schema subsets"):
+        _schema_subset_for_question({"relations": []}, "Which fields matter?")

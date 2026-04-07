@@ -1,13 +1,13 @@
-"""Tests for the persistent source registry and registry-backed manifests."""
+"""Tests for generic source-registry facts and raw-schema planner input."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.agent.planner import _schema_subset_for_question
+from app.agent.planner import build_planner_input
 from app.config import get_settings
-from app.data.registry import clear_source_registry, create_source_link, get_schema_manifest, ingest_source
-from app.data.semantic_model import clear_semantic_context_cache, get_semantic_context
+from app.data.registry import clear_source_registry, create_source_link, ingest_source
+from app.data.semantic_model import clear_semantic_context_cache
 
 
 @pytest.fixture(autouse=True)
@@ -22,79 +22,104 @@ def isolated_registry(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
-def _relation_by_name(manifest: dict, relation_name: str) -> dict:
-    return next(relation for relation in manifest["relations"] if relation["name"] == relation_name)
+def _table_by_name(planner_input, table_name: str):
+    for source in planner_input.sources:
+        for table in source.tables:
+            if table.table_name == table_name:
+                return table
+    raise AssertionError(f"Table {table_name!r} not found in planner input.")
 
 
-def test_registry_manifest_starts_empty_without_builtin_sources() -> None:
-    manifest = get_schema_manifest()
+def test_build_planner_input_returns_empty_sources_without_uploads() -> None:
+    planner_input = build_planner_input("What data is available?")
 
-    assert manifest["dialect"] == "duckdb"
-    assert manifest["relations"] == []
+    assert planner_input.execution_dialect == "duckdb"
+    assert planner_input.sources == []
+    assert planner_input.relationships == []
 
 
-def test_nested_json_upload_creates_primary_and_child_relations() -> None:
+def test_csv_planner_input_preserves_raw_table_and_column_names() -> None:
+    asset = ingest_source(
+        "Sales Orders 2024.csv",
+        b"Order ID,Customer Name,Order Value ($)\n1,Ada,120.5\n2,Ben,80.0\n",
+    )
+
+    planner_input = build_planner_input("Which customers spent the most?", [asset.id])
+
+    assert len(planner_input.sources) == 1
+    source = planner_input.sources[0]
+    assert source.source_format == "csv"
+    table = _table_by_name(planner_input, "Sales Orders 2024")
+    assert table.source_id == asset.id
+    assert table.table_name == "Sales Orders 2024"
+    assert {column.column_name for column in table.columns} == {"Order ID", "Customer Name", "Order Value ($)"}
+    assert table.identifier_columns == ["Order ID"]
+    assert table.measure_columns == ["Order Value ($)"]
+    assert "semantic_mappings" not in table.model_dump()
+    assert all("semantic_hints" not in column.model_dump() for column in table.columns)
+
+
+def test_tsv_planner_input_keeps_full_schema_without_trimming() -> None:
+    headers = ["Order ID"] + [f"Column {index}" for index in range(1, 23)]
+    row_one = ["o1"] + [str(index) for index in range(1, 23)]
+    row_two = ["o2"] + [str(index + 100) for index in range(1, 23)]
+    payload = ("\t".join(headers) + "\n" + "\t".join(row_one) + "\n" + "\t".join(row_two) + "\n").encode("utf-8")
+    asset = ingest_source("wide.tsv", payload)
+
+    planner_input = build_planner_input("Show me every field.", [asset.id])
+    table = _table_by_name(planner_input, "wide")
+
+    assert planner_input.sources[0].source_format == "tsv"
+    assert len(table.columns) == len(headers)
+    assert {column.column_name for column in table.columns} == set(headers)
+
+
+def test_nested_json_upload_uses_raw_table_names_and_confirmed_relationships() -> None:
     asset = ingest_source(
         "orders.json",
         b'[{"order_id":"o1","customer":{"name":"Ada"},"items":[{"sku":"A1","qty":2},{"sku":"B2","qty":1}]}]',
     )
 
-    manifest = get_schema_manifest([asset.id])
-    root = _relation_by_name(manifest, asset.primaryRelationName)
-    child = next(relation for relation in manifest["relations"] if relation["name"].startswith(f"{asset.primaryRelationName}__"))
+    planner_input = build_planner_input("Which items were ordered?", [asset.id])
+    root = _table_by_name(planner_input, "orders")
+    child = _table_by_name(planner_input, "orders.items")
 
-    assert asset.relationCount == 2
-    assert root["is_primary"] is True
-    assert any(column["name"] == "customer__name" and column["source_path"] == "customer.name" for column in root["columns"])
-    assert child["parent_relation"] == asset.primaryRelationName
-    assert any(join["target_relation"] == asset.primaryRelationName for join in child["join_keys"])
-    assert {column["name"] for column in child["columns"]} >= {"record_id", "parent_record_id", "ordinal", "sku", "qty"}
+    assert {table.table_name for table in planner_input.sources[0].tables} == {"orders", "orders.items"}
+    assert any(column.column_name == "name" and column.source_path == "customer.name" for column in root.columns)
+    assert {column.column_name for column in child.columns} == {"sku", "qty"}
 
-
-def test_unrelated_sources_do_not_auto_link_even_with_shared_column_names() -> None:
-    customers = ingest_source("customers.csv", b"customer_id,name\nc1,Ada\nc2,Ben\n")
-    orders = ingest_source("orders.csv", b"customer_id,amount\nc1,100\nc2,50\n")
-
-    manifest = get_schema_manifest([customers.id, orders.id])
-    customers_relation = _relation_by_name(manifest, customers.primaryRelationName)
-    orders_relation = _relation_by_name(manifest, orders.primaryRelationName)
-
-    assert customers_relation["join_keys"] == []
-    assert orders_relation["join_keys"] == []
+    relationship = planner_input.relationships[0]
+    assert relationship.left_table == "orders"
+    assert relationship.right_table == "orders.items"
+    assert relationship.relationship_type == "parent_child"
+    assert relationship.cardinality == "one_to_many"
+    assert relationship.join_safety == "aggregate_child_before_join"
+    assert relationship.confirmed_by == "json_nesting"
+    assert relationship.join_keys[0].left_column == "record_id"
+    assert relationship.join_keys[0].right_column == "parent_record_id"
 
 
-def test_explicit_source_links_appear_in_manifest() -> None:
-    customers = ingest_source("customers.csv", b"customer_id,name\nc1,Ada\nc2,Ben\n")
-    orders = ingest_source("orders.csv", b"customer_id,amount\nc1,100\nc2,50\n")
+def test_unrelated_sources_do_not_auto_join_on_shared_column_names() -> None:
+    customers = ingest_source("customers.csv", b"Customer ID,Name\nc1,Ada\nc2,Ben\n")
+    orders = ingest_source("orders.csv", b"Customer ID,Amount\nc1,100\nc2,50\n")
 
+    planner_input = build_planner_input("Which customers spent the most?", [customers.id, orders.id])
+
+    assert len(planner_input.sources) == 2
+    assert planner_input.relationships == []
+
+
+def test_explicit_source_links_are_exposed_as_confirmed_relationships() -> None:
+    customers = ingest_source("customers.csv", b"Customer ID,Name\nc1,Ada\nc2,Ben\n")
+    orders = ingest_source("orders.csv", b"Customer ID,Amount\nc1,100\nc1,50\n")
     create_source_link(customers.primaryRelationName, "customer_id", orders.primaryRelationName, "customer_id")
-    manifest = get_schema_manifest([customers.id, orders.id])
-    customers_relation = _relation_by_name(manifest, customers.primaryRelationName)
-    orders_relation = _relation_by_name(manifest, orders.primaryRelationName)
 
-    assert any(join["target_relation"] == orders.primaryRelationName and join["source_column"] == "customer_id" for join in customers_relation["join_keys"])
-    assert any(join["target_relation"] == customers.primaryRelationName and join["source_column"] == "customer_id" for join in orders_relation["join_keys"])
+    planner_input = build_planner_input("Which customers spent the most?", [customers.id, orders.id])
 
-
-def test_semantic_context_scopes_to_selected_sources() -> None:
-    inventory = ingest_source("inventory.csv", b"sku,stock\nA1,10\nB2,3\n")
-    invoices = ingest_source("invoices.csv", b"invoice_id,amount\ni1,100\ni2,250\n")
-
-    full_context = get_semantic_context().schema_manifest
-    scoped_context = get_semantic_context([inventory.id]).schema_manifest
-
-    assert any(relation["name"] == inventory.primaryRelationName for relation in full_context["relations"])
-    assert any(relation["name"] == invoices.primaryRelationName for relation in full_context["relations"])
-    assert not any(relation["name"] == invoices.primaryRelationName for relation in scoped_context["relations"])
-    assert any(relation["name"] == inventory.primaryRelationName for relation in scoped_context["relations"])
-
-
-def test_schema_subset_prefers_relevant_uploaded_primary_relation() -> None:
-    ingest_source("inventory.csv", b"sku,stock\nA1,10\nB2,3\n")
-    invoices = ingest_source("invoices.csv", b"invoice_id,invoice_amount,status\ni1,100,paid\ni2,250,due\n")
-    ingest_source("campaigns.csv", b"campaign,spend\nspring,1200\nsummer,950\n")
-
-    manifest = get_schema_manifest()
-    subset = _schema_subset_for_question(manifest, "Which invoice amount is highest?")
-
-    assert any(relation["name"] == invoices.primaryRelationName for relation in subset["relations"])
+    assert len(planner_input.relationships) == 1
+    relationship = planner_input.relationships[0]
+    assert relationship.relationship_type == "explicit"
+    assert relationship.confirmed_by == "user_link"
+    assert relationship.cardinality == "one_to_many"
+    assert relationship.join_keys[0].left_column == "Customer ID"
+    assert relationship.join_keys[0].right_column == "Customer ID"
