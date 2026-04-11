@@ -23,6 +23,7 @@ class AnalysisState(TypedDict, total=False):
     retry_counts: dict[str, int]
     replan_count: int
     analyzer_result: dict[str, Any] | None
+    analysis: str
     final_answer: str
     failure_summary: str
     workflow_status: str
@@ -48,6 +49,7 @@ def create_initial_state(query: str, source_ids: list[str] | None = None) -> Ana
         retry_counts={},
         replan_count=0,
         analyzer_result=None,
+        analysis="",
         final_answer="",
         failure_summary="",
         workflow_status="initializing",
