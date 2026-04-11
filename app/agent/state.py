@@ -16,6 +16,7 @@ class AnalysisState(TypedDict, total=False):
     schema_context_summary: dict[str, Any]
     current_plan: dict[str, Any] | None
     current_step_index: int
+    generated_query: dict[str, Any] | None
     stored_outputs: dict[str, Any]
     step_queries: dict[str, list[str]]
     failure_history: dict[str, list[dict[str, Any]]]
@@ -40,6 +41,7 @@ def create_initial_state(query: str, source_ids: list[str] | None = None) -> Ana
         schema_context_summary={},
         current_plan=None,
         current_step_index=0,
+        generated_query=None,
         stored_outputs={},
         step_queries={},
         failure_history={},
