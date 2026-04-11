@@ -88,7 +88,21 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     return (await response.text()) as T;
   }
 
-  return (await response.json()) as T;
+  if (response.status === 204 || response.status === 205) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("application/json")) {
+    return JSON.parse(text) as T;
+  }
+
+  return text as T;
 }
 
 /** Authenticated request helper — passes `Authorization: Bearer` for you. */
