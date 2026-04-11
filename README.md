@@ -1,16 +1,16 @@
 # GTM Analytics Copilot
 
-GTM Analytics Copilot is an agentic analytics MVP for GTM teams. It takes a business question like "Why did pipeline velocity drop this week?", loads schema context for the dataset, uses an LLM to plan the next SQL or pandas step, executes it over curated views, replans on failure, then runs a single analysis pass to produce a markdown narrative. The API returns that analysis plus trace and executed steps.
+GTM Analytics Copilot is an agentic analytics MVP for GTM teams. It takes a business question like "Why did pipeline velocity drop this week?", loads a compact schema/context summary for the uploaded data, asks an LLM planner for the full ordered workflow, generates one SQL query at a time, executes each step over curated views, replans on bounded failure, then runs a final analyzer pass to produce the grounded answer. The API returns that analysis plus trace and executed steps.
 
 ## Why This Is Not "Chat With CSV"
 
 This project is intentionally constrained:
 
-- It uses an LLM planner, but only over curated dataset views.
+- It uses an LLM planner, but only over a compact schema/context summary derived from curated dataset views.
 - It does not let the model access arbitrary files or external systems.
-- It executes exact SQL or restricted pandas steps instead of vague chain-of-thought.
+- It executes exact SQL steps instead of vague chain-of-thought.
 - It replans using execution errors instead of silently falling back to rules.
-- It does not run a separate deterministic verification layer; the narrative is grounded in executed step outputs.
+- It does not run a separate deterministic verification layer; the final answer is grounded in schema/context plus executed step outputs.
 - It exposes every step, code snippet, and output preview in the UI.
 
 That makes it feel much closer to a production analytics copilot than a generic chatbot sitting on top of a CSV file.
@@ -48,27 +48,29 @@ Out of scope:
 Backend:
 
 - FastAPI for API contracts
-- LangGraph for the planner-executor-replanner loop
-- DuckDB plus pandas over the provided CRM sales dataset
+- LangGraph for the planner -> query writer -> executor -> analyzer loop
+- DuckDB over the provided CRM sales dataset
 - OpenAI or Gemini for planning and final analysis text (see `LLM_PROVIDER`)
 
 Workflow:
 
-1. Load curated views and a schema-only manifest (tables, columns, dtypes, row counts)
-2. Ask the LLM for the next executable step (or finish)
-3. Execute SQL (DuckDB) or restricted pandas
-4. On failure or empty results, review and replan
-5. Loop until the planner finishes or limits are hit
-6. Ask the LLM once to turn the executed results into markdown analysis
-7. Return `analysis`, `trace`, `executed_steps`, and `errors`
+1. Load curated views and a schema/context manifest from the selected uploaded sources
+2. Build a compact schema/context summary for the planner
+3. Ask the LLM planner for the full ordered workflow in one shot
+4. Ask the LLM query writer for exactly one SQL query for the current step
+5. Execute that SQL in DuckDB and store any successful output for downstream steps
+6. Retry the same step once on execution failure, then replan once with a failure summary if needed
+7. Ask the analyzer once to return either the final answer, a replan decision, or a best-effort answer
+8. Return `analysis`, `trace`, `executed_steps`, and `errors`
 
 Core modules:
 
 - `app/data/semantic_model.py`: curated dataset views and schema manifest
 - `app/llm/`: OpenAI or Gemini client
-- `app/agent/planner.py`: compiled multi-step SQL plan and optional repair
-- `app/agent/executor.py`: SQL execution engine (pandas helpers retained)
-- `app/agent/analysis.py`: single-pass narrative from query + steps
+- `app/agent/planner.py`: compact schema/context builder plus full-plan and replan generation
+- `app/agent/query_writer.py`: one-step-at-a-time SQL generation
+- `app/agent/executor.py`: SQL execution engine with stored intermediate outputs
+- `app/agent/analysis.py`: final analyzer decision and grounded answer rendering
 - `app/agent/graph.py`: LangGraph orchestration
 - `app/api/routes.py`: Shared API surface (health, uploads, inspections, **stateless** `POST /analyze`)
 - `app/api/chat_routes.py`: **Primary product** chat API (`POST /chat`, conversation history)
@@ -219,8 +221,8 @@ python -m pytest
 
 The test suite covers:
 
-- mocked LLM planner and analysis contracts
-- executor and review behavior
+- mocked LLM planner, query-writer, and analyzer contracts
+- executor and workflow-control behavior
 - API response shape
 
 ## Docker
@@ -242,6 +244,7 @@ Then open:
 2. Select "Why did pipeline velocity drop this week?"
 3. Run the analysis and show the planner-executor loop spinner.
 4. Open the executed-steps panel and show the generated SQL or pandas code.
+   This build generates SQL only.
 5. Show the output preview for the most important step.
 6. Expand the trace panel to show replanning-capable agent behavior.
 7. Close on the markdown analysis and next best insights.
@@ -259,6 +262,8 @@ Add screenshots here for:
 - The current build is scoped to pipeline analytics on the provided CRM dataset.
 - Churn analysis is out of scope until a real subscriptions or churn dataset is added.
 - The planner only sees registered views; execution is SQL or restricted pandas.
+- The planner and query writer only see the compact schema/context summary built from registered views.
+- Execution is SQL-only in the current workflow.
 - An API key is required for the configured `LLM_PROVIDER` (OpenAI or Gemini).
 
 ## Future Roadmap
