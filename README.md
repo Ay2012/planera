@@ -1,106 +1,79 @@
-# GTM Analytics Copilot
+# Planera
 
-GTM Analytics Copilot is an agentic analytics MVP for GTM teams. It takes a business question like "Why did pipeline velocity drop this week?", loads a compact schema/context summary for the uploaded data, asks an LLM planner for the full ordered workflow, generates one SQL query at a time, executes each step over curated views, replans on bounded failure, then runs a final analyzer pass to produce the grounded answer. The API returns that analysis plus trace and executed steps.
+Planera is a chat-first analytics workspace for structured data. You sign in, upload CSV or JSON files, ask a business question, and review both the answer and the execution trail behind it.
 
-## Why This Is Not "Chat With CSV"
+The product is designed to feel closer to an analytics copilot than a generic "chat with files" tool:
 
-This project is intentionally constrained:
+- uploads are scoped to the signed-in user
+- analysis runs through a bounded plan/query/execute loop
+- answers come back with trace, SQL, result previews, and validation context
+- conversation history and inspection snapshots are persisted for the main chat flow
 
-- It uses an LLM planner, but only over a compact schema/context summary derived from curated dataset views.
-- It does not let the model access arbitrary files or external systems.
-- It executes exact SQL steps instead of vague chain-of-thought.
-- It replans using execution errors instead of silently falling back to rules.
-- It does not run a separate deterministic verification layer; the final answer is grounded in schema/context plus executed step outputs.
-- It exposes every step, code snippet, and output preview in the UI.
+## Current Workflow
 
-That makes it feel much closer to a production analytics copilot than a generic chatbot sitting on top of a CSV file.
+1. Sign in from the UI
+2. Upload one or more CSV or JSON files
+3. Start a chat or continue an existing conversation
+4. Ask a question against the attached uploads
+5. Review the answer, then open the inspection panel for SQL, results, trace, and validation details
 
-## MVP Scope
-
-Supported intents:
-
-- `diagnosis`
-- `comparison`
-- `recommendation`
-
-Supported metric:
-
-- `pipeline_velocity`
-
-Supported dimensions:
-
-- `segment`
-- `stage`
-- `owner`
-- `deal_age_bucket`
-- `plan_tier`
-
-Out of scope:
-
-- churn analytics for the current dataset
-- CRM writes
-- forecasting
-- causal inference
-- broad BI workflows
-
-## Architecture
+## Product Surface
 
 Backend:
 
-- FastAPI for API contracts
-- LangGraph for the planner -> query writer -> executor -> analyzer loop
-- DuckDB over the provided CRM sales dataset
-- OpenAI or Gemini for planning and final analysis text (see `LLM_PROVIDER`)
+- FastAPI API
+- SQLite for users, conversations, messages, and inspection snapshots
+- DuckDB for uploaded data and query execution
+- OpenAI or Gemini for the planning and answer-generation steps
 
-Workflow:
+Frontend:
 
-1. Load curated views and a schema/context manifest from the selected uploaded sources
-2. Build a compact schema/context summary for the planner
-3. Ask the LLM planner for the full ordered workflow in one shot
-4. Ask the LLM query writer for exactly one SQL query for the current step
-5. Execute that SQL in DuckDB and store any successful output for downstream steps
-6. Retry the same step once on execution failure, then replan once with a failure summary if needed
-7. Ask the analyzer once to return either the final answer, a replan decision, or a best-effort answer
-8. Return `analysis`, `trace`, `executed_steps`, and `errors`
+- React + Vite workspace UI
+- authenticated chat experience
+- uploads management
+- inspection drawer for execution details
 
-Core modules:
+## API Overview
 
-- `app/data/semantic_model.py`: curated dataset views and schema manifest
-- `app/llm/`: OpenAI or Gemini client
-- `app/agent/planner.py`: compact schema/context builder plus full-plan and replan generation
-- `app/agent/query_writer.py`: one-step-at-a-time SQL generation
-- `app/agent/executor.py`: SQL execution engine with stored intermediate outputs
-- `app/agent/analysis.py`: final analyzer decision and grounded answer rendering
-- `app/agent/graph.py`: LangGraph orchestration
-- `app/api/routes.py`: Shared API surface (health, uploads, inspections, **stateless** `POST /analyze`)
-- `app/api/chat_routes.py`: **Primary product** chat API (`POST /chat`, conversation history)
-- `ui/`: React + Vite frontend
+Primary app flow:
 
-### API: primary chat vs stateless analyze
+- `POST /auth/signup`
+- `POST /auth/login`
+- `GET /auth/me`
+- `GET /uploads`
+- `POST /uploads`
+- `DELETE /uploads/{source_id}`
+- `POST /chat`
+- `GET /conversations`
+- `GET /conversations/{id}`
+- `GET /inspections/{inspection_id}`
 
-| Path | Role |
-|------|------|
-| **`POST /chat`** (with JWT) | **Product path:** persists conversations, messages, and inspection snapshots; use for the React app and any integrated client. |
-| **`POST /analyze`** (no auth) | **Debug / manual testing:** same analytics engine, but **no persistence** and inspection data only in server memory until restart. Marked **deprecated** in OpenAPI; do not treat it as a peer to `/chat`. |
+Debug-only helper:
+
+- `POST /analyze`
+
+Notes:
+
+- `POST /chat` is the main product API and is what the React app uses for real analysis turns.
+- `POST /analyze` is a deprecated debug path. It is stateless, still authenticated, and should not be treated as the normal integration path.
 
 ## Repo Structure
 
 ```text
 planera/
-├── app/
-├── ui/
-├── data/
+├── app/          # FastAPI backend
+├── ui/           # React frontend
+├── data/         # sample data, uploads, and DuckDB registry files
 ├── tests/
-├── .env.example
 ├── requirements.txt
-├── Dockerfile
 ├── docker-compose.yml
+├── Dockerfile
 └── README.md
 ```
 
-## Setup
+## Local Setup
 
-### 1. Create the environment
+### 1. Backend
 
 ```bash
 cd planera
@@ -108,168 +81,73 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-```
-
-Use this project virtualenv for all Python commands (`uvicorn`, `pytest`, `pip`). In each new shell, activate it first:
-
-```bash
-source .venv/bin/activate
-```
-
-*(Windows Git Bash: `source .venv/Scripts/activate` — PowerShell: `.venv\Scripts\Activate.ps1`.)*
-
-### 2. Run the API
-
-```bash
-source .venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API endpoints:
-
-- `GET /health`
-- `GET /sample-questions`
-- `POST /uploads`
-- `GET /inspections/{inspection_id}`
-- **`POST /chat`** — **primary:** authenticated analysis turn; persists thread + inspection snapshot
-- `GET /conversations`, `GET /conversations/{id}` — list/load chat history (authenticated)
-- `POST /analyze` — **deprecated / debug only:** stateless run (see table above)
-- `POST /auth/signup` — create user (SQLite), returns JWT
-- `POST /auth/login` — issue JWT
-- `GET /auth/me` — current user (`Authorization: Bearer <token>`)
-
-**Database:** On API startup the app creates SQLite tables if needed (no separate migration step for this demo). By default the DB file is `planera.db` in the project root (same directory as `requirements.txt`). Override with `DATABASE_PATH` in `.env`. Add a strong `JWT_SECRET_KEY` before any shared deployment; the repo default is for local dev only.
-
-Example (debug — stateless; prefer `/chat` with a JWT for real usage):
-
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Why did pipeline velocity drop this week?"}'
-```
-
-### 3. Run the React UI
+### 2. Frontend
 
 In a second terminal:
 
 ```bash
 cd ui
-nodeenv -p --prebuilt    
 npm install
 npm run dev
 ```
 
+Open:
+
+- API: [http://localhost:8000](http://localhost:8000)
+- UI: [http://localhost:5173](http://localhost:5173)
+
 ## Environment Variables
 
-Backend settings are defined in `.env.example`:
+Start from `.env.example` for backend setup, then override additional runtime paths or secrets as needed.
 
-- `APP_NAME`
-- `APP_ENV`
-- `API_HOST`
-- `API_PORT`
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `LOG_LEVEL`
-- `DATABASE_PATH` (optional; default `planera.db` beside `requirements.txt`)
-- `JWT_SECRET_KEY` (optional for local dev; **required** for non-local use)
-- `JWT_ALGORITHM` (default `HS256`)
-- `ACCESS_TOKEN_EXPIRE_MINUTES` (default `10080`)
+Most important:
+
+- `LLM_PROVIDER`
+- `OPENAI_API_KEY` or `GEMINI_API_KEY`
+- `OPENAI_MODEL` or `GEMINI_MODEL`
+- `DATABASE_PATH`
+- `JWT_SECRET_KEY`
+- `UPLOAD_STORAGE_DIR`
+- `REGISTRY_PATH`
+- `CORS_ALLOW_ORIGINS`
 
 Frontend settings live in `ui/.env.example`.
 
-Set `LLM_PROVIDER` to `openai` or `gemini` and provide the matching API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`).
+Most important:
 
-## Data Model
-
-Current dataset:
-
-- `data/CRM+Sales+Opportunities/sales_pipeline.csv`
-- `data/CRM+Sales+Opportunities/accounts.csv`
-- `data/CRM+Sales+Opportunities/products.csv`
-- `data/CRM+Sales+Opportunities/sales_teams.csv`
-
-The app builds a semantic view called `opportunities_enriched` from these files and uses the dataset's latest close date as the analysis reference point.
-
-Key derived fields include:
-
-- `pipeline_velocity_days`
-- `deal_age_days`
-- `stage_age_days`
-- `deal_age_bucket`
-- `segment`
-- `plan_tier`
-
-## Sample Questions
-
-- Why did pipeline velocity drop this week?
-- Compare SMB vs Enterprise performance
-- Which segment is underperforming?
-- What should we do about this drop?
-- Which deals should we prioritize?
+- `VITE_API_BASE_URL`
+- `VITE_API_FALLBACK_MODE`
 
 ## Running Tests
 
-Use the project virtualenv so `pytest` and packages like `passlib` match `requirements.txt` (if you use Conda/base Python, a bare `pytest` may run the wrong interpreter and fail imports):
+Backend:
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt
 python -m pytest
 ```
 
-The test suite covers:
+Frontend:
 
-- mocked LLM planner, query-writer, and analyzer contracts
-- executor and workflow-control behavior
-- API response shape
+```bash
+cd ui
+npm run check
+```
 
 ## Docker
 
-To launch both services together:
+To run both services together:
 
 ```bash
 docker compose up --build
 ```
 
-Then open:
+## Notes
 
-- API: [http://localhost:8000](http://localhost:8000)
-- UI: [http://localhost:5173](http://localhost:5173)
-
-## Demo Script
-
-1. Open the Planera UI.
-2. Select "Why did pipeline velocity drop this week?"
-3. Run the analysis and show the planner-executor loop spinner.
-4. Open the executed-steps panel and show the generated SQL or pandas code.
-   This build generates SQL only.
-5. Show the output preview for the most important step.
-6. Expand the trace panel to show replanning-capable agent behavior.
-7. Close on the markdown analysis and next best insights.
-
-## Screenshots
-
-Add screenshots here for:
-
-- main dashboard
-- analysis panel
-- trace panel
-
-## Known Limitations
-
-- The current build is scoped to pipeline analytics on the provided CRM dataset.
-- Churn analysis is out of scope until a real subscriptions or churn dataset is added.
-- The planner only sees registered views; execution is SQL or restricted pandas.
-- The planner and query writer only see the compact schema/context summary built from registered views.
-- Execution is SQL-only in the current workflow.
-- An API key is required for the configured `LLM_PROVIDER` (OpenAI or Gemini).
-
-## Future Roadmap
-
-- Add subscription and churn datasets for a second metric family
-- Richer time window parsing
-- Stronger execution-time linting for generated pandas steps
-- LangSmith or Phoenix integration for trace export
-- Stronger deal-prioritization playbooks
+- The current product flow is upload-first: the UI expects attached CSV or JSON files before submitting an analysis turn.
+- The repository still contains sample CRM-style data under `data/`, but the active app flow is centered on user uploads rather than a built-in warehouse connection.
+- Uploaded sources are scoped correctly, but separate uploads are not automatically joined just because they share similarly named columns.
+- A valid API key is required for whichever LLM provider is configured.
