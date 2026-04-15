@@ -1,7 +1,6 @@
 import { Drawer } from "@/components/shared/Drawer";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Spinner } from "@/components/shared/Spinner";
-import { Button } from "@/components/shared/Button";
 import { SqlPreview } from "@/components/app/SqlPreview";
 import { ResultTable } from "@/components/app/ResultTable";
 import { ValidationSummary } from "@/components/app/ValidationSummary";
@@ -17,9 +16,7 @@ interface InspectionPanelProps {
   error: string | null;
   inspection: InspectionData | null;
   activeTab: InspectionTabId;
-  maximized: boolean;
   onClose: () => void;
-  onToggleMaximized: () => void;
   onTabChange: (tab: InspectionTabId) => void;
 }
 
@@ -58,9 +55,7 @@ export function InspectionPanel({
   error,
   inspection,
   activeTab,
-  maximized,
   onClose,
-  onToggleMaximized,
   onTabChange,
 }: InspectionPanelProps) {
   return (
@@ -69,12 +64,7 @@ export function InspectionPanel({
       onClose={onClose}
       title={inspection?.title ?? "Inspection"}
       subtitle="LeetCode-style execution feedback adapted for analytics workflows."
-      maximized={maximized}
-      actions={
-        <Button variant="secondary" size="sm" onClick={onToggleMaximized}>
-          {maximized ? "Collapse" : "Expand"}
-        </Button>
-      }
+      size="wide"
     >
       {loading ? (
         <div className="flex h-full min-h-[420px] items-center justify-center">

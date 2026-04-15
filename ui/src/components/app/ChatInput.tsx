@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/shared/Button";
 import { Textarea } from "@/components/shared/Textarea";
-import { PromptChips } from "@/components/app/PromptChips";
 import { Spinner } from "@/components/shared/Spinner";
 import { UPLOAD_ACCEPT } from "@/lib/uploads";
 import type { UploadedAsset } from "@/types/upload";
@@ -10,7 +9,6 @@ interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  onPickPrompt: (prompt: string) => void;
   onUpload: (file: File) => void;
   onRemoveAttachment: (assetId: string) => void;
   attachments: UploadedAsset[];
@@ -22,7 +20,6 @@ export function ChatInput({
   value,
   onChange,
   onSubmit,
-  onPickPrompt,
   onUpload,
   onRemoveAttachment,
   attachments,
@@ -77,7 +74,6 @@ export function ChatInput({
   return (
     <div className="border-t border-line/80 bg-canvas/90 px-4 py-4 backdrop-blur sm:px-6">
       <div className="mx-auto w-full min-w-0 max-w-4xl space-y-4">
-        <PromptChips onPick={onPickPrompt} />
         {attachments.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {attachments.map((asset) => (
@@ -127,7 +123,7 @@ export function ChatInput({
               <span className="min-w-0 text-xs text-muted">CSV or JSON only</span>
             </div>
             <Button onClick={onSubmit} disabled={isSubmitting || value.trim().length === 0}>
-              {isSubmitting ? <Spinner className="h-4 w-4 border-white/30 border-t-white" /> : null}
+              {isSubmitting ? <Spinner className="h-4 w-4 border-contrast-foreground/30 border-t-contrast-foreground" /> : null}
               Send
             </Button>
           </div>

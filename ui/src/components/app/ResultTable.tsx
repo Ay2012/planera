@@ -21,7 +21,7 @@ export function ResultTable({ title, table }: ResultTableProps) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-line/70 bg-white">
+          <tbody className="divide-y divide-line/70 bg-panel">
             {table.rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
                 {table.columns.map((column) => (

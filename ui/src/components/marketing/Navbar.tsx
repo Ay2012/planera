@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { PageContainer } from "@/components/shared/PageContainer";
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { homeNavLinks } from "@/lib/constants";
 import { classNames } from "@/lib/classNames";
 
@@ -26,7 +27,7 @@ export function Navbar() {
           )}
         >
           <Link to="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">P</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-contrast text-sm font-semibold text-contrast-foreground">P</div>
             <span className="text-lg font-semibold text-ink">Planera</span>
           </Link>
           <nav className="hidden items-center gap-6 lg:flex">
@@ -52,11 +53,13 @@ export function Navbar() {
                 </a>
               )
             ))}
+            <ThemeToggle />
             <Link to="/app">
               <Button>Open App</Button>
             </Link>
           </nav>
           <div className="flex items-center gap-3 lg:hidden">
+            <ThemeToggle />
             <Link to="/sign-in" className="text-sm text-muted transition hover:text-ink">
               Sign In
             </Link>

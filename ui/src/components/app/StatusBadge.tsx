@@ -8,9 +8,9 @@ interface StatusBadgeProps {
 const toneStyles = {
   neutral: "border-line bg-surface text-muted",
   accent: "border-accent/15 bg-accent-soft text-accent-strong",
-  success: "border-green-200 bg-green-50 text-success",
-  warning: "border-amber-200 bg-amber-50 text-warning",
-  danger: "border-red-200 bg-red-50 text-danger",
+  success: "border-success/20 bg-success-soft text-success",
+  warning: "border-warning/20 bg-warning-soft text-warning",
+  danger: "border-danger/20 bg-danger-soft text-danger",
 };
 
 export function StatusBadge({ label, tone = "neutral" }: StatusBadgeProps) {

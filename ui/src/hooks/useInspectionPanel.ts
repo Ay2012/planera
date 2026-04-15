@@ -6,7 +6,6 @@ import type { InspectionData, InspectionTabId } from "@/types/inspection";
 export function useInspectionPanel() {
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
-  const [maximized, setMaximized] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectionTabId>("sql");
   const [inspection, setInspection] = useState<InspectionData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,7 +30,6 @@ export function useInspectionPanel() {
 
   return {
     open,
-    maximized,
     activeTab,
     inspection,
     loading,
@@ -39,6 +37,5 @@ export function useInspectionPanel() {
     setActiveTab,
     openInspection,
     closeInspection: () => setOpen(false),
-    toggleMaximized: () => setMaximized((value) => !value),
   };
 }

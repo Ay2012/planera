@@ -2,7 +2,10 @@ const keys = {
   sidebarCollapsed: "planera.sidebar.collapsed",
   activeSection: "planera.active.section",
   activeConversation: "planera.active.conversation",
+  theme: "planera.theme",
 };
+
+type ThemePreference = "light" | "dark";
 
 export const uiStore = {
   getSidebarCollapsed() {
@@ -22,5 +25,12 @@ export const uiStore = {
   },
   setActiveConversation(value: string) {
     window.localStorage.setItem(keys.activeConversation, value);
+  },
+  getTheme(): ThemePreference | null {
+    const value = window.localStorage.getItem(keys.theme);
+    return value === "light" || value === "dark" ? value : null;
+  },
+  setTheme(value: ThemePreference) {
+    window.localStorage.setItem(keys.theme, value);
   },
 };

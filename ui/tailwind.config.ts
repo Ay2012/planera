@@ -5,22 +5,38 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        canvas: "#f4efe8",
-        surface: "#faf7f2",
-        panel: "#fffdf9",
-        elevated: "#f7f2ea",
-        line: "#d9d0c4",
-        ink: "#161819",
-        muted: "#636c72",
-        accent: {
-          DEFAULT: "#235852",
-          soft: "#d9ebe7",
-          strong: "#193f3b",
+        canvas: "rgb(var(--color-canvas) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        panel: "rgb(var(--color-panel) / <alpha-value>)",
+        elevated: "rgb(var(--color-elevated) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)",
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        contrast: {
+          DEFAULT: "rgb(var(--color-contrast) / <alpha-value>)",
+          foreground: "rgb(var(--color-contrast-foreground) / <alpha-value>)",
         },
-        sand: "#ece3d5",
-        success: "#2f6d5a",
-        warning: "#8a6227",
-        danger: "#8c4141",
+        accent: {
+          DEFAULT: "rgb(var(--color-accent) / <alpha-value>)",
+          soft: "rgb(var(--color-accent-soft) / <alpha-value>)",
+          strong: "rgb(var(--color-accent-strong) / <alpha-value>)",
+        },
+        success: {
+          DEFAULT: "rgb(var(--color-success) / <alpha-value>)",
+          soft: "rgb(var(--color-success-soft) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "rgb(var(--color-warning) / <alpha-value>)",
+          soft: "rgb(var(--color-warning-soft) / <alpha-value>)",
+        },
+        danger: {
+          DEFAULT: "rgb(var(--color-danger) / <alpha-value>)",
+          soft: "rgb(var(--color-danger-soft) / <alpha-value>)",
+        },
+        code: {
+          DEFAULT: "rgb(var(--color-code) / <alpha-value>)",
+          ink: "rgb(var(--color-code-ink) / <alpha-value>)",
+        },
       },
       fontFamily: {
         sans: ['"Inter"', '"Avenir Next"', '"Segoe UI"', "system-ui", "sans-serif"],
@@ -28,9 +44,10 @@ const config: Config = {
         mono: ['"SFMono-Regular"', '"SF Mono"', "ui-monospace", "monospace"],
       },
       boxShadow: {
-        soft: "0 16px 48px rgba(24, 32, 34, 0.07)",
-        card: "0 12px 28px rgba(24, 32, 34, 0.06)",
-        focus: "0 0 0 3px rgba(35, 88, 82, 0.16)",
+        soft: "var(--shadow-soft)",
+        card: "var(--shadow-card)",
+        field: "var(--shadow-field)",
+        focus: "0 0 0 3px rgb(var(--color-accent) / 0.16)",
       },
       borderRadius: {
         xl2: "1.4rem",

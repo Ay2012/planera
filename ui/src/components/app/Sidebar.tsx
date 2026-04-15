@@ -1,6 +1,14 @@
+import chatBubblesIcon from "@/assets/icons/chat-bubbles.png";
+import dashboardIcon from "@/assets/icons/dashboard.png";
+import logoutIcon from "@/assets/icons/logout.png";
+import saveIcon from "@/assets/icons/save.png";
+import settingIcon from "@/assets/icons/setting.png";
+import uploadIcon from "@/assets/icons/upload.png";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { Drawer } from "@/components/shared/Drawer";
+import { MaskedIcon } from "@/components/shared/MaskedIcon";
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { useAuth } from "@/hooks/useAuth";
 import { sidebarNavItems } from "@/lib/constants";
 import { classNames } from "@/lib/classNames";
@@ -24,33 +32,27 @@ interface SidebarProps {
 }
 
 const navIcons = {
-  chats: (
-    <path d="M3 4.5C3 3.67 3.67 3 4.5 3H11.75C12.58 3 13.25 3.67 13.25 4.5V9C13.25 9.83 12.58 10.5 11.75 10.5H7L4 13V10.5H4.5C3.67 10.5 3 9.83 3 9V4.5Z" />
-  ),
-  uploads: (
-    <path d="M8 11V3.5M8 3.5L5.5 6M8 3.5L10.5 6M3 12.5V13.25C3 14.22 3.78 15 4.75 15H11.25C12.22 15 13 14.22 13 13.25V12.5" />
-  ),
-  saved: (
-    <path d="M4.5 3H11.5C12.33 3 13 3.67 13 4.5V13L8 10.5L3 13V4.5C3 3.67 3.67 3 4.5 3Z" />
-  ),
-  dashboards: <path d="M3 3.5H7V8H3V3.5ZM9 3.5H13V6H9V3.5ZM9 8H13V12.5H9V8ZM3 10H7V12.5H3V10Z" />,
+  chats: chatBubblesIcon,
+  uploads: uploadIcon,
+  saved: saveIcon,
+  dashboards: dashboardIcon,
 };
 
 function BrandMark({ showExpandCue = false }: { showExpandCue?: boolean }) {
   return (
     <div
       className={classNames(
-        "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-ink text-sm font-semibold text-white shadow-card transition-all duration-300",
+        "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-contrast text-sm font-semibold text-contrast-foreground shadow-card transition-all duration-300",
         showExpandCue && "group-hover:shadow-soft",
       )}
     >
       <span className={classNames("relative z-[1] transition-opacity duration-300", showExpandCue && "group-hover:opacity-0")}>P</span>
       {showExpandCue ? (
         <>
-          <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-contrast-foreground/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
           <svg
             aria-hidden="true"
-            className="pointer-events-none absolute z-[2] h-4 w-4 -translate-x-1 text-white opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+            className="pointer-events-none absolute z-[2] h-4 w-4 -translate-x-1 text-contrast-foreground opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
             viewBox="0 0 16 16"
             fill="none"
           >
@@ -130,6 +132,11 @@ function SidebarContent({
         {!collapsed ? "New Chat" : null}
       </Button>
 
+      <ThemeToggle
+        showLabel={!collapsed}
+        className={classNames(collapsed ? "!mx-auto" : "w-full justify-start rounded-2xl px-3")}
+      />
+
       <div className={classNames("space-y-2", collapsed && "w-full")}>
         {sidebarNavItems.map((item) => {
           const active = item.id === activeSection;
@@ -145,12 +152,10 @@ function SidebarContent({
                 collapsed
                   ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 transition"
                   : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition",
-                active ? "bg-ink text-white shadow-card" : "text-muted hover:bg-panel hover:text-ink",
+                active ? "bg-contrast text-contrast-foreground shadow-card" : "text-muted hover:bg-panel hover:text-ink",
               )}
             >
-              <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                {navIcons[item.id]}
-              </svg>
+              <MaskedIcon src={navIcons[item.id]} className="h-4 w-4 shrink-0" />
               {!collapsed ? <span>{item.label}</span> : null}
             </button>
           );
@@ -198,35 +203,33 @@ function SidebarContent({
 
       {!collapsed && user ? <p className="truncate px-1 text-xs text-muted">{user.email}</p> : null}
 
-      <button
-        type="button"
-        onClick={logout}
-        aria-label="Sign out"
-        className={classNames(
-          collapsed
-            ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
-            : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
-        )}
-      >
-        <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6.5 14H3.17A1.67 1.67 0 0 1 1.5 12.33V3.67A1.67 1.67 0 0 1 3.17 2H6.5M10.5 11.33 14 8 10.5 4.67M14 8H6" />
-        </svg>
-        {!collapsed ? "Sign out" : null}
-      </button>
+      <div className={classNames("space-y-2", collapsed && "w-full")}>
+        <Link
+          to="/settings"
+          className={classNames(
+            collapsed
+              ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
+              : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
+          )}
+        >
+          <MaskedIcon src={settingIcon} className="h-4 w-4 shrink-0" />
+          {!collapsed ? "Settings" : null}
+        </Link>
 
-      <Link
-        to="/settings"
-        className={classNames(
-          collapsed
-            ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
-            : "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
-        )}
-      >
-        <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M8 3.5V2.5M8 13.5V12.5M11.18 4.82L11.88 4.12M4.12 11.88L4.82 11.18M12.5 8H13.5M2.5 8H3.5M11.18 11.18L11.88 11.88M4.12 4.12L4.82 4.82M10.5 8C10.5 9.38 9.38 10.5 8 10.5C6.62 10.5 5.5 9.38 5.5 8C5.5 6.62 6.62 5.5 8 5.5C9.38 5.5 10.5 6.62 10.5 8Z" />
-        </svg>
-        {!collapsed ? "Settings" : null}
-      </Link>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sign out"
+          className={classNames(
+            collapsed
+              ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 text-sm text-muted transition hover:bg-panel hover:text-ink"
+              : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-muted transition hover:bg-panel hover:text-ink",
+          )}
+        >
+          <MaskedIcon src={logoutIcon} className="h-4 w-4 shrink-0" />
+          {!collapsed ? "Sign out" : null}
+        </button>
+      </div>
     </div>
   );
 }

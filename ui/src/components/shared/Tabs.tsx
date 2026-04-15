@@ -22,8 +22,8 @@ export function Tabs<T extends string>({ tabs, activeTab, onChange }: TabsProps<
           className={classNames(
             "rounded-full px-4 py-2 text-sm font-medium transition",
             activeTab === tab.id
-              ? "bg-ink text-white shadow-card"
-              : "text-muted hover:bg-white hover:text-ink",
+              ? "bg-contrast text-contrast-foreground shadow-card"
+              : "text-muted hover:bg-panel hover:text-ink",
           )}
         >
           {tab.label}

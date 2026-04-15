@@ -38,7 +38,7 @@ export function HeroSection() {
             </div>
           </div>
 
-          <Card elevated className="w-full overflow-hidden rounded-[30px] bg-white/95 p-5">
+          <Card elevated className="w-full overflow-hidden rounded-[30px] bg-panel/95 p-5">
             <div className="rounded-[26px] border border-line bg-surface p-4">
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <div>
@@ -50,7 +50,7 @@ export function HeroSection() {
 
               <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.42fr)_minmax(300px,0.88fr)] xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.84fr)]">
                 <div className="min-w-0 space-y-3">
-                  <div className="rounded-[22px] bg-ink px-4 py-3 text-sm text-white shadow-card">
+                  <div className="rounded-[22px] bg-contrast px-4 py-3 text-sm text-contrast-foreground shadow-card">
                     Why is enterprise conversion softening this month?
                   </div>
                   <div className="min-w-0 rounded-[22px] border border-line bg-panel px-4 py-4 shadow-card">
@@ -90,7 +90,7 @@ export function HeroSection() {
                         <StatusBadge label="Query valid" tone="success" />
                         <StatusBadge label="Snowflake" tone="accent" />
                       </div>
-                      <div className="rounded-2xl bg-[#12161A] p-3 font-mono text-[11px] leading-6 text-[#E8F0EB]">
+                      <div className="rounded-2xl bg-code p-3 font-mono text-[11px] leading-6 text-code-ink">
                         SELECT segment, AVG(conversion_rate)
                         <br />
                         FROM revenue_pipeline

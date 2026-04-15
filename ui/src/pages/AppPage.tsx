@@ -161,10 +161,6 @@ export function AppPage() {
         value={draft}
         onChange={setDraft}
         onSubmit={() => void handleSubmit()}
-        onPickPrompt={(prompt) => {
-          setDraft(prompt);
-          handleSectionChange("chats");
-        }}
         onUpload={(file) => void handleChatUpload(file)}
         onRemoveAttachment={removeActiveUpload}
         attachments={activeUploads}
@@ -291,9 +287,7 @@ export function AppPage() {
           error={inspection.error}
           inspection={inspection.inspection}
           activeTab={inspection.activeTab}
-          maximized={inspection.maximized}
           onClose={inspection.closeInspection}
-          onToggleMaximized={inspection.toggleMaximized}
           onTabChange={inspection.setActiveTab}
         />
       }
