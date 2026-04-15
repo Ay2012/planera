@@ -6,13 +6,6 @@ export const homeNavLinks = [
   { label: "Sign In", href: "/sign-in" },
 ] as const;
 
-export const promptSuggestions = [
-  "Why is pipeline conversion dropping?",
-  "Show churn by segment",
-  "Summarize top anomalies",
-  "Generate SQL for this question",
-];
-
 export const sidebarNavItems = [
   { id: "chats", label: "Chats" },
   { id: "uploads", label: "Uploads" },

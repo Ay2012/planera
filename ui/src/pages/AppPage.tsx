@@ -161,10 +161,6 @@ export function AppPage() {
         value={draft}
         onChange={setDraft}
         onSubmit={() => void handleSubmit()}
-        onPickPrompt={(prompt) => {
-          setDraft(prompt);
-          handleSectionChange("chats");
-        }}
         onUpload={(file) => void handleChatUpload(file)}
         onRemoveAttachment={removeActiveUpload}
         attachments={activeUploads}
