@@ -24,17 +24,6 @@ _RELATIONS_TABLE = "__planera_registry_source_relations"
 _COLUMNS_TABLE = "__planera_registry_source_columns"
 _LINKS_TABLE = "__planera_registry_source_links"
 _SYSTEM_COLUMNS = {"record_id", "parent_record_id", "ordinal"}
-_SEMANTIC_ALIAS_LEXICON: dict[str, list[str]] = {
-    "owner": ["agent", "rep", "representative", "sales rep", "assignee"],
-    "manager": ["manager", "lead", "supervisor", "team lead"],
-    "regional_office": ["region", "regional office", "office", "territory"],
-    "account_id": ["account", "customer", "client", "account identifier"],
-    "deal_id": ["deal", "opportunity", "opportunity identifier"],
-    "deal_value": ["revenue", "deal size", "amount", "value"],
-    "stage": ["status stage", "pipeline stage"],
-    "segment": ["customer segment", "market segment"],
-    "pipeline_velocity_days": ["pipeline velocity", "cycle time", "sales cycle length"],
-}
 
 
 @dataclass(frozen=True)
@@ -250,11 +239,6 @@ def _semantic_hints(column_name: str, original_name: str = "", source_path: str 
             hints.add(f"{base} id")
             hints.add(f"{base} identifier")
 
-    for key, aliases in _SEMANTIC_ALIAS_LEXICON.items():
-        key_tokens = set(_split_identifier(key))
-        if column_name == key or key_tokens.issubset(set(tokens)):
-            hints.update(aliases)
-
     return sorted(hint for hint in hints if hint)
 
 
@@ -362,11 +346,13 @@ def _coerce_frame_types(frame: pd.DataFrame) -> pd.DataFrame:
     return coerced.convert_dtypes()
 
 
-def _rename_system_columns(frame: pd.DataFrame) -> pd.DataFrame:
+def _rename_uploaded_columns(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, str]]]:
     renamed = frame.copy()
     next_names: dict[str, str] = {}
+    column_paths: dict[str, dict[str, str]] = {}
     for column in renamed.columns:
-        safe_name = _safe_identifier(str(column))
+        raw_name = str(column)
+        safe_name = _safe_identifier(raw_name)
         candidate = safe_name
         if candidate in _SYSTEM_COLUMNS:
             candidate = f"{candidate}_value"
@@ -375,7 +361,11 @@ def _rename_system_columns(frame: pd.DataFrame) -> pd.DataFrame:
             candidate = f"{safe_name}_{counter}"
             counter += 1
         next_names[column] = candidate
-    return renamed.rename(columns=next_names)
+        column_paths[candidate] = {
+            "original_name": raw_name,
+            "source_path": raw_name,
+        }
+    return renamed.rename(columns=next_names), column_paths
 
 
 def _ensure_record_id(frame: pd.DataFrame) -> pd.DataFrame:
@@ -480,10 +470,12 @@ def _read_uploaded_frame(filename: str, content: bytes) -> pd.DataFrame:
     try:
         if suffix == ".csv":
             return pd.read_csv(buffer)
+        if suffix == ".tsv":
+            return pd.read_csv(buffer, sep="\t")
     except Exception as exc:  # pragma: no cover - pandas errors vary
         raise ValueError(f"Could not parse {filename} as a structured text dataset.") from exc
 
-    raise ValueError("Only CSV and JSON uploads are currently supported.")
+    raise ValueError("Only CSV, TSV, and JSON uploads are currently supported.")
 
 
 def _build_uploaded_asset(package: SourcePackage) -> UploadedAsset:
@@ -650,20 +642,22 @@ def _build_child_relation_name(primary_relation_name: str, path_segments: tuple[
     return f"{primary_relation_name}__{suffix}"
 
 
-def _ingest_csv_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
+def _ingest_delimited_source(
+    filename: str,
+    content: bytes,
+    *,
+    source_format: str,
+    source_id: str | None = None,
+) -> SourcePackage:
     safe_name = Path(filename or "upload.csv").name
-    frame = _ensure_record_id(_rename_system_columns(_read_uploaded_frame(safe_name, content)))
+    raw_frame = _read_uploaded_frame(safe_name, content)
+    renamed_frame, column_paths = _rename_uploaded_columns(raw_frame)
+    frame = _ensure_record_id(renamed_frame)
     frame = _coerce_frame_types(frame)
     source_id = source_id or _short_id("source")
     source_slug = _slugify(Path(safe_name).stem)
     relation_name = _build_primary_relation_name(source_slug, source_id)
-    column_paths = {
-        str(column): {
-            "original_name": str(column),
-            "source_path": str(column),
-        }
-        for column in frame.columns
-    }
+    column_paths["record_id"] = {"original_name": "record_id", "source_path": "record_id"}
     relation = _schema_relation_for_frame(
         relation_name=relation_name,
         source_id=source_id,
@@ -673,7 +667,7 @@ def _ingest_csv_source(filename: str, content: bytes, source_id: str | None = No
         is_primary=True,
         parent_relation=None,
         join_keys=[],
-        lineage={"format": "csv", "json_path": "$"},
+        lineage={"format": source_format, "json_path": "$"},
         column_paths=column_paths,
     )
     return SourcePackage(
@@ -681,14 +675,22 @@ def _ingest_csv_source(filename: str, content: bytes, source_id: str | None = No
         source_name=safe_name,
         source_slug=source_slug,
         source_kind="upload",
-        source_format="csv",
+        source_format=source_format,
         origin="Workspace upload",
         file_name=safe_name,
-        file_type=_derive_file_type(safe_name, "csv"),
+        file_type=_derive_file_type(safe_name, source_format),
         size_bytes=len(content),
         raw_payload=content,
         relations=[RelationPackage(relation=relation, frame=frame)],
     )
+
+
+def _ingest_csv_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
+    return _ingest_delimited_source(filename, content, source_format="csv", source_id=source_id)
+
+
+def _ingest_tsv_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
+    return _ingest_delimited_source(filename, content, source_format="tsv", source_id=source_id)
 
 
 def _ingest_json_source(filename: str, content: bytes, source_id: str | None = None) -> SourcePackage:
@@ -894,7 +896,7 @@ def ensure_builtin_sources() -> None:
 
 
 def ingest_source(filename: str, content: bytes, *, source_id: str | None = None) -> UploadedAsset:
-    """Persist a CSV/JSON upload into the registry and return its UI summary."""
+    """Persist a CSV/TSV/JSON upload into the registry and return its UI summary."""
 
     safe_name = Path(filename or "upload.csv").name
     suffix = Path(safe_name).suffix.lower()
@@ -902,8 +904,10 @@ def ingest_source(filename: str, content: bytes, *, source_id: str | None = None
         package = _ingest_json_source(safe_name, content, source_id=source_id)
     elif suffix == ".csv":
         package = _ingest_csv_source(safe_name, content, source_id=source_id)
+    elif suffix == ".tsv":
+        package = _ingest_tsv_source(safe_name, content, source_id=source_id)
     else:
-        raise ValueError("Only CSV and JSON uploads are currently supported.")
+        raise ValueError("Only CSV, TSV, and JSON uploads are currently supported.")
     conn = _connect_registry(read_only=False)
     try:
         _persist_source_package(conn, package)
@@ -913,6 +917,135 @@ def ingest_source(filename: str, content: bytes, *, source_id: str | None = None
 
     clear_semantic_context_cache()
     return _build_uploaded_asset(package)
+
+
+def get_source_records(source_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Return persisted source records for the requested scope."""
+
+    conn = _connect_registry(read_only=True)
+    try:
+        filter_sql, params = _source_filter_sql(source_ids)
+        rows = conn.execute(
+            f"""
+            SELECT source_id, source_name, source_format, origin, file_name, file_type, metadata_json
+            FROM {_SOURCES_TABLE}
+            {filter_sql}
+            ORDER BY source_id
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "source_id": source_id,
+                "source_name": source_name,
+                "source_format": source_format,
+                "origin": origin,
+                "file_name": file_name,
+                "file_type": file_type,
+                "metadata": json.loads(metadata_json or "{}"),
+            }
+            for source_id, source_name, source_format, origin, file_name, file_type, metadata_json in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_source_relations(source_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Return persisted relation facts for the requested scope."""
+
+    conn = _connect_registry(read_only=True)
+    try:
+        filter_sql, params = _source_filter_sql(source_ids)
+        rows = conn.execute(
+            f"""
+            SELECT relation_name, source_id, kind, is_primary, parent_relation, row_count, grain, lineage_json
+            FROM {_RELATIONS_TABLE}
+            {filter_sql}
+            ORDER BY source_id, is_primary DESC, relation_name
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "relation_name": relation_name,
+                "source_id": source_id,
+                "kind": kind,
+                "is_primary": bool(is_primary),
+                "parent_relation": parent_relation,
+                "row_count": int(row_count),
+                "grain": grain or "",
+                "lineage": json.loads(lineage_json or "{}"),
+            }
+            for relation_name, source_id, kind, is_primary, parent_relation, row_count, grain, lineage_json in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_source_columns(source_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Return persisted column facts for the requested scope."""
+
+    conn = _connect_registry(read_only=True)
+    try:
+        filter_sql, params = _source_filter_sql(source_ids)
+        rows = conn.execute(
+            f"""
+            SELECT source_id, relation_name, ordinal, column_name, dtype, type_family, original_name, source_path, nullable
+            FROM {_COLUMNS_TABLE}
+            {filter_sql}
+            ORDER BY source_id, relation_name, ordinal
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "source_id": source_id,
+                "relation_name": relation_name,
+                "ordinal": int(ordinal),
+                "column_name": column_name,
+                "dtype": dtype,
+                "type_family": type_family,
+                "original_name": original_name or column_name,
+                "source_path": source_path or column_name,
+                "nullable": bool(nullable),
+            }
+            for source_id, relation_name, ordinal, column_name, dtype, type_family, original_name, source_path, nullable in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_source_links(source_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Return confirmed stored links for the requested scope."""
+
+    conn = _connect_registry(read_only=True)
+    try:
+        filter_sql, params = _link_filter_sql(source_ids)
+        rows = conn.execute(
+            f"""
+            SELECT left_source_id, left_relation_name, right_source_id, right_relation_name, link_type,
+                   is_explicit, join_keys_json, metadata_json
+            FROM {_LINKS_TABLE}
+            {filter_sql}
+            ORDER BY left_source_id, left_relation_name, right_relation_name
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "left_source_id": left_source_id,
+                "left_relation_name": left_relation_name,
+                "right_source_id": right_source_id,
+                "right_relation_name": right_relation_name,
+                "link_type": link_type,
+                "is_explicit": bool(is_explicit),
+                "join_keys": json.loads(join_keys_json or "[]"),
+                "metadata": json.loads(metadata_json or "{}"),
+            }
+            for left_source_id, left_relation_name, right_source_id, right_relation_name, link_type, is_explicit, join_keys_json, metadata_json in rows
+        ]
+    finally:
+        conn.close()
 
 
 def delete_source(source_id: str) -> None:
