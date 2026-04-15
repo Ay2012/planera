@@ -287,9 +287,7 @@ export function AppPage() {
           error={inspection.error}
           inspection={inspection.inspection}
           activeTab={inspection.activeTab}
-          maximized={inspection.maximized}
           onClose={inspection.closeInspection}
-          onToggleMaximized={inspection.toggleMaximized}
           onTabChange={inspection.setActiveTab}
         />
       }

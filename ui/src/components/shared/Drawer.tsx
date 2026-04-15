@@ -7,7 +7,7 @@ interface DrawerProps {
   title?: string;
   subtitle?: string;
   side?: "left" | "right";
-  maximized?: boolean;
+  size?: "default" | "wide";
   actions?: ReactNode;
   children: ReactNode;
 }
@@ -18,7 +18,7 @@ export function Drawer({
   title,
   subtitle,
   side = "right",
-  maximized = false,
+  size = "default",
   actions,
   children,
 }: DrawerProps) {
@@ -61,7 +61,7 @@ export function Drawer({
           side === "right"
             ? "right-0 border-l"
             : "left-0 border-r",
-          maximized
+          size === "wide"
             ? "w-full lg:w-[min(88vw,980px)]"
             : "w-full sm:w-[min(92vw,560px)] lg:w-[520px]",
           open
@@ -70,6 +70,9 @@ export function Drawer({
               ? "translate-x-full"
               : "-translate-x-full",
         )}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
       >
         <div className="flex h-full flex-col">
           <div className="border-b border-line/80 px-5 py-4">
