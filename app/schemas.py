@@ -152,6 +152,132 @@ class SchemaManifest(BaseModel):
     views: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class CompactSchemaColumn(BaseModel):
+    """Compact field summary shared with the planner, query writer, and analyzer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    dtype: str = Field(..., min_length=1)
+    type_family: Literal["string", "number", "boolean", "datetime", "unknown"] = "unknown"
+    nullable: bool = True
+    semantic_hints: list[str] = Field(default_factory=list)
+
+
+class CompactSchemaRelation(BaseModel):
+    """One compact relation summary used as workflow source-of-truth."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    source_id: str = ""
+    source_name: str = ""
+    is_primary: bool = False
+    row_count: int = 0
+    grain: str = ""
+    identifier_columns: list[str] = Field(default_factory=list)
+    time_columns: list[str] = Field(default_factory=list)
+    measure_columns: list[str] = Field(default_factory=list)
+    dimension_columns: list[str] = Field(default_factory=list)
+    join_keys: list[SchemaJoinKey] = Field(default_factory=list)
+    semantic_mappings: list[SchemaConceptMapping] = Field(default_factory=list)
+    columns: list[CompactSchemaColumn] = Field(default_factory=list)
+
+
+class CompactSchemaContext(BaseModel):
+    """Compact schema/context summary passed into the multi-agent workflow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference_date: str = ""
+    source: str = ""
+    dialect: str = ""
+    relations: list[CompactSchemaRelation] = Field(default_factory=list)
+
+
+class UnsupportedRequirement(BaseModel):
+    """One reason the question may be only partially answerable with the available schema."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["column", "relationship", "concept", "time_range", "filter", "metric", "other"] = "other"
+    description: str = Field(..., min_length=1)
+    relation: str | None = None
+    column: str | None = None
+
+
+class AnalysisPlanStep(BaseModel):
+    """One planner-authored step without executable query text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    purpose: str = Field(..., min_length=1)
+    depends_on: list[int] = Field(default_factory=list)
+    output_alias: str = Field(..., min_length=1)
+    relations: list[str] = Field(default_factory=list)
+    required_columns: list[str] = Field(default_factory=list)
+    expected_output: str = Field(..., min_length=1)
+    allow_empty_result: bool = False
+
+
+class AnalysisPlan(BaseModel):
+    """Full ordered workflow plan created by the planner in one shot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    objective: str = Field(..., min_length=1)
+    can_answer_fully: bool = True
+    unsupported_requirements: list[UnsupportedRequirement] = Field(default_factory=list)
+    steps: list[AnalysisPlanStep] = Field(default_factory=list, max_length=3)
+    max_steps: int
+    metric: str = ""
+    metric_direction: str = ""
+
+    @field_validator("max_steps", mode="before")
+    @classmethod
+    def normalize_max_steps(cls, v: Any) -> int:
+        """The workflow keeps a fixed ceiling of three executable steps."""
+
+        return 3
+
+
+class GeneratedQuery(BaseModel):
+    """One SQL query emitted by the query writer for a single workflow step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step_id: int
+    sql: str = Field(..., min_length=1)
+    explanation: str = Field(..., min_length=1)
+
+
+class StepFailureRecord(BaseModel):
+    """Execution failure details kept in workflow state across retries and replans."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step_id: int
+    attempt: int
+    error: str = Field(..., min_length=1)
+    query: str = ""
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalyzerDecision(BaseModel):
+    """Final analyzer output: answer, replan decision, or best-effort summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["final_answer", "replan"]
+    summary: str = Field(..., min_length=1)
+    key_findings: list[str] = Field(default_factory=list)
+    important_metrics: list[EvidenceValue] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    final_answer: str = ""
+    failure_summary: str = ""
+
+
 class EvidenceValue(BaseModel):
     """One exact label/value pair carried into the analysis evidence packet."""
 

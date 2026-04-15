@@ -17,10 +17,16 @@ from app.schemas import AnalyzeResponse, ArtifactSummary, InspectionData, Metada
 STEP_LABELS: dict[str, str] = {
     "load_schema_context_node": "Schema Context",
     "planner_compiled_node": "Query Planning",
+    "planner_node": "Workflow Planning",
+    "query_writer_node": "Query Writing",
     "execute_plan_node": "Execution",
+    "executor_node": "Step Execution",
     "analysis_node": "Narrative Synthesis",
+    "analyzer_node": "Final Analysis",
     "api_analyze": "API Analyze",
     "repair_planner": "Repair Planning",
+    "replan_node": "Replanning",
+    "best_effort_node": "Best Effort Answer",
 }
 
 _STORE_LOCK = Lock()

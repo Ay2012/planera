@@ -1,223 +1,241 @@
-"""Execution engine for compiled SQL plans and legacy pandas helpers."""
+"""Executor runtime for step-by-step SQL execution."""
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
-import duckdb
 import pandas as pd
 
-from app.agent.state import AnalysisState
-from app.data.semantic_model import get_semantic_context, new_duckdb_connection
-from app.schemas import ArtifactSummary, CompiledPlanStep, ExecutedStep
+from app.schemas import ArtifactSummary, ExecutedStep, StepFailureRecord
+from app.data.semantic_model import new_duckdb_connection
 
 
-SAFE_BUILTINS: dict[str, Any] = {
-    "len": len,
-    "min": min,
-    "max": max,
-    "sum": sum,
-    "round": round,
-    "sorted": sorted,
-}
+def _summarize_artifact(alias: str, frame: pd.DataFrame) -> ArtifactSummary:
+    preview_rows = frame.head(5).where(pd.notnull(frame), None).to_dict(orient="records")
+    return ArtifactSummary(
+        alias=alias,
+        artifact_type="table",
+        row_count=int(len(frame)),
+        columns=list(frame.columns),
+        preview_rows=preview_rows,
+        summary={},
+    )
 
 
-def _summarize_artifact(alias: str, value: Any) -> ArtifactSummary:
-    if isinstance(value, pd.Series):
-        value = value.to_frame()
-
-    if isinstance(value, pd.DataFrame):
-        preview_rows = value.head(5).where(pd.notnull(value), None).to_dict(orient="records")
-        summary: dict[str, Any] = {}
-        numeric = value.select_dtypes(include=["number"])
-        if not numeric.empty:
-            summary["numeric_means"] = numeric.mean().round(2).to_dict()
-        return ArtifactSummary(
-            alias=alias,
-            artifact_type="table",
-            row_count=int(len(value)),
-            columns=list(value.columns),
-            preview_rows=preview_rows,
-            summary=summary,
-        )
-
-    if isinstance(value, (int, float, str, bool)):
-        return ArtifactSummary(
-            alias=alias,
-            artifact_type="scalar" if not isinstance(value, str) else "text",
-            row_count=1,
-            columns=["value"],
-            preview_rows=[{"value": value}],
-            summary={"value": value},
-        )
-
-    return ArtifactSummary(alias=alias, artifact_type="unknown")
+def _register_stored_outputs(conn, state: dict[str, Any]) -> None:  # noqa: ANN001
+    for alias, value in (state.get("stored_outputs") or {}).items():
+        if isinstance(value, pd.DataFrame):
+            conn.register(alias, value)
 
 
-def _register_artifacts(conn: duckdb.DuckDBPyConnection, state: AnalysisState) -> None:
-    for alias, artifact in state["artifacts"].items():
-        if isinstance(artifact, pd.DataFrame):
-            conn.register(alias, artifact)
+def _current_step(state: dict[str, Any]) -> dict[str, Any]:
+    plan = state.get("current_plan") or {}
+    steps = list(plan.get("steps") or [])
+    step_index = int(state.get("current_step_index", 0) or 0)
+    if step_index < 0 or step_index >= len(steps):
+        raise ValueError(f"Current step index {step_index} is out of range for the active plan.")
+    return steps[step_index]
 
 
-def _execute_sql(state: AnalysisState, step: dict[str, Any]) -> ArtifactSummary:
+def _record_failure(state: dict[str, Any], *, step: dict[str, Any], attempt: int, error: str, sql: str) -> None:
+    failure = StepFailureRecord(
+        step_id=int(step["id"]),
+        attempt=attempt,
+        error=error,
+        query=sql,
+        details={"output_alias": step["output_alias"]},
+    )
+    state.setdefault("failure_history", {}).setdefault(str(step["id"]), []).append(failure.model_dump())
+
+
+def _record_error(
+    state: dict[str, Any],
+    *,
+    step_name: str,
+    message: str,
+    recoverable: bool,
+    details: dict[str, Any],
+) -> None:
+    state.setdefault("errors", []).append(
+        {
+            "step": step_name,
+            "message": message,
+            "recoverable": recoverable,
+            "details": details,
+        }
+    )
+
+
+def _failure_summary(step: dict[str, Any], error: str) -> str:
+    relations = ", ".join(step.get("relations") or []) or "the active relations"
+    return f"Execution repeatedly failed for step {step['id']} against {relations}: {error}"
+
+
+def execute_current_step(state: dict[str, Any]) -> dict[str, Any]:
+    """Execute the query for the current workflow step."""
+
+    step = _current_step(state)
+    generated_query = state.get("generated_query") or {}
+    sql = str(generated_query.get("sql") or "").strip()
+    if not sql:
+        raise ValueError("No generated SQL is available for the current step.")
+
+    attempt = int((state.get("retry_counts") or {}).get(str(step["id"]), 0) or 0) + 1
     conn = new_duckdb_connection(state.get("dataset_context"))
     try:
-        _register_artifacts(conn, state)
-        frame = conn.execute(step["code"]).fetchdf()
-        state["artifacts"][step["output_alias"]] = frame
-        return _summarize_artifact(step["output_alias"], frame)
-    finally:
-        conn.close()
-
-
-def _execute_pandas(state: AnalysisState, step: dict[str, Any]) -> ArtifactSummary:
-    context = get_semantic_context(state.get("source_ids"))
-    local_env: dict[str, Any] = {
-        **context.raw_views,
-        **context.semantic_views,
-        **state["artifacts"],
-        "pd": pd,
-        "result": None,
-    }
-    exec(step["code"], {"__builtins__": SAFE_BUILTINS}, local_env)
-    result = local_env.get("result")
-    if result is None:
-        raise ValueError("Pandas step did not assign a `result` variable.")
-    state["artifacts"][step["output_alias"]] = result
-    return _summarize_artifact(step["output_alias"], result)
-
-
-def _empty_table_failure(artifact: ArtifactSummary) -> bool:
-    return artifact.artifact_type == "table" and artifact.row_count == 0
-
-
-def compiled_plan_row_to_internal(row: dict[str, Any] | CompiledPlanStep) -> dict[str, Any]:
-    """Map a compiled plan step to the executor shape used by `_execute_sql`."""
-
-    if isinstance(row, CompiledPlanStep):
-        row = row.model_dump()
-    sid = row["id"]
-    alias = row.get("output_alias") or f"step_{sid}"
-    return {
-        "id": str(sid),
-        "kind": "sql",
-        "purpose": row["purpose"],
-        "code": row["query"],
-        "output_alias": alias,
-    }
-
-
-def preflight_compiled_plan(state: AnalysisState, compiled_plan: dict[str, Any]) -> dict[str, Any]:
-    """
-    Validate compiled SQL steps against the active runtime before execution.
-
-    Steps are checked in order so later queries can reference earlier output aliases.
-    """
-
-    conn = new_duckdb_connection(state.get("dataset_context"))
-    try:
-        _register_artifacts(conn, state)
-        rows = list(compiled_plan.get("plan") or [])
-        rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
-
-        for row in rows:
-            internal = compiled_plan_row_to_internal(row)
-            sql = internal["code"].strip().rstrip(";")
-            try:
-                preview = conn.execute(f"SELECT * FROM ({sql}) AS __planera_preflight LIMIT 0").fetchdf()
-                conn.register(internal["output_alias"], preview)
-            except Exception as exc:
-                return {
-                    "status": "failed",
-                    "failed_step_id": internal["id"],
-                    "error": str(exc),
-                    "query": internal["code"],
-                }
-
-        return {"status": "success"}
-    finally:
-        conn.close()
-
-
-def _try_sql_step(
-    state: AnalysisState,
-    internal: dict[str, Any],
-    attempt: int,
-) -> tuple[Literal["success", "failed"], ExecutedStep]:
-    """Run one SQL step with post-execution validation (non-empty table)."""
-
-    state["total_steps"] += 1
-    try:
-        artifact = _execute_sql(state, internal)
-        if _empty_table_failure(artifact):
-            state["artifacts"].pop(internal["output_alias"], None)
-            raise ValueError("Step returned an empty result set.")
-        executed = ExecutedStep(
-            id=internal["id"],
-            kind="sql",
-            purpose=internal["purpose"],
-            code=internal["code"],
-            output_alias=internal["output_alias"],
-            attempt=attempt,
-            status="success",
-            artifact=artifact,
-        )
-        state["executed_steps"].append(executed.model_dump())
-        state["last_error"] = None
-        return "success", executed
+        _register_stored_outputs(conn, state)
+        frame = conn.execute(sql).fetchdf()
     except Exception as exc:
+        message = str(exc)
         executed = ExecutedStep(
-            id=internal["id"],
+            id=str(step["id"]),
             kind="sql",
-            purpose=internal["purpose"],
-            code=internal["code"],
-            output_alias=internal["output_alias"],
+            purpose=step["purpose"],
+            code=sql,
+            output_alias=step["output_alias"],
             attempt=attempt,
             status="failed",
-            error=str(exc),
+            error=message,
         )
-        state["executed_steps"].append(executed.model_dump())
-        state["last_error"] = {"step_id": internal["id"], "message": str(exc), "code": internal["code"]}
-        return "failed", executed
+        state.setdefault("executed_steps", []).append(executed.model_dump())
+        _record_failure(state, step=step, attempt=attempt, error=message, sql=sql)
+
+        prior_retries = int((state.get("retry_counts") or {}).get(str(step["id"]), 0) or 0)
+        if prior_retries < 1:
+            state.setdefault("retry_counts", {})[str(step["id"])] = prior_retries + 1
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=True,
+                details={"step_id": step["id"], "attempt": attempt},
+            )
+            state["workflow_status"] = "retry_same_step"
+        elif int(state.get("replan_count", 0) or 0) < 1:
+            state["failure_summary"] = _failure_summary(step, message)
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=True,
+                details={"step_id": step["id"], "attempt": attempt, "action": "replan"},
+            )
+            state["workflow_status"] = "needs_replan"
+        else:
+            state["failure_summary"] = _failure_summary(step, message)
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=False,
+                details={"step_id": step["id"], "attempt": attempt, "action": "best_effort"},
+            )
+            state["workflow_status"] = "best_effort"
+
+        state["generated_query"] = None
+        return state
+    finally:
+        conn.close()
+
+    artifact = _summarize_artifact(step["output_alias"], frame)
+    if artifact.row_count == 0 and not bool(step.get("allow_empty_result", False)):
+        message = "Step returned an empty result set."
+        executed = ExecutedStep(
+            id=str(step["id"]),
+            kind="sql",
+            purpose=step["purpose"],
+            code=sql,
+            output_alias=step["output_alias"],
+            attempt=attempt,
+            status="failed",
+            error=message,
+        )
+        state.setdefault("executed_steps", []).append(executed.model_dump())
+        _record_failure(state, step=step, attempt=attempt, error=message, sql=sql)
+
+        prior_retries = int((state.get("retry_counts") or {}).get(str(step["id"]), 0) or 0)
+        if prior_retries < 1:
+            state.setdefault("retry_counts", {})[str(step["id"])] = prior_retries + 1
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=True,
+                details={"step_id": step["id"], "attempt": attempt},
+            )
+            state["workflow_status"] = "retry_same_step"
+        elif int(state.get("replan_count", 0) or 0) < 1:
+            state["failure_summary"] = _failure_summary(step, message)
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=True,
+                details={"step_id": step["id"], "attempt": attempt, "action": "replan"},
+            )
+            state["workflow_status"] = "needs_replan"
+        else:
+            state["failure_summary"] = _failure_summary(step, message)
+            _record_error(
+                state,
+                step_name="executor_node",
+                message=message,
+                recoverable=False,
+                details={"step_id": step["id"], "attempt": attempt, "action": "best_effort"},
+            )
+            state["workflow_status"] = "best_effort"
+
+        state["generated_query"] = None
+        return state
+
+    state.setdefault("stored_outputs", {})[step["output_alias"]] = frame
+    executed = ExecutedStep(
+        id=str(step["id"]),
+        kind="sql",
+        purpose=step["purpose"],
+        code=sql,
+        output_alias=step["output_alias"],
+        attempt=attempt,
+        status="success",
+        artifact=artifact,
+    )
+    state.setdefault("executed_steps", []).append(executed.model_dump())
+    state["generated_query"] = None
+
+    plan = state.get("current_plan") or {}
+    steps = list(plan.get("steps") or [])
+    step_index = int(state.get("current_step_index", 0) or 0)
+    if step_index + 1 < len(steps):
+        state["current_step_index"] = step_index + 1
+        state["workflow_status"] = "plan_ready"
+    else:
+        state["workflow_status"] = "ready_for_analysis"
+    return state
 
 
-def execute_plan(state: AnalysisState, compiled_plan: dict[str, Any]) -> dict[str, Any]:
-    """
-    Iterate compiled plan steps in order: validate via execute + empty-table check.
-    No LLM calls. On first failure, stop and return structured status.
-    """
+def build_best_effort_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Populate the best-effort answer path after retry limits are exhausted."""
 
-    rows = list(compiled_plan.get("plan") or [])
-    rows.sort(key=lambda r: r["id"] if isinstance(r, dict) else r.id)
+    successful_steps = [step for step in state.get("executed_steps") or [] if step.get("status") == "success"]
+    answered_parts: list[str] = []
+    if successful_steps:
+        last_success = successful_steps[-1]
+        artifact = last_success.get("artifact") or {}
+        answered_parts.append(
+            f"Captured {artifact.get('row_count', 0)} row(s) in {artifact.get('alias', last_success.get('output_alias', 'the final output'))}."
+        )
 
-    for row in rows:
-        internal = compiled_plan_row_to_internal(row)
-        status, _ = _try_sql_step(state, internal, attempt=1)
-        if status == "failed":
-            sid = internal["id"]
-            return {
-                "status": "failed",
-                "failed_step_id": sid,
-                "error": state["last_error"]["message"] if state["last_error"] else "Unknown error",
-            }
-
-    return {"status": "success"}
-
-
-def execute_single_plan_step(
-    state: AnalysisState,
-    compiled_step: dict[str, Any],
-    attempt: int,
-) -> dict[str, Any]:
-    """Re-run a single compiled step (e.g. after repair)."""
-
-    internal = compiled_plan_row_to_internal(compiled_step)
-    status, _ = _try_sql_step(state, internal, attempt=attempt)
-    if status == "failed":
-        return {
-            "status": "failed",
-            "failed_step_id": internal["id"],
-            "error": state["last_error"]["message"] if state["last_error"] else "Unknown error",
-        }
-    return {"status": "success"}
+    unanswered = state.get("failure_summary") or "The workflow could not complete every planned step."
+    lines = [
+        "## Best-effort answer",
+        "",
+        "Answered parts:",
+        *(f"- {item}" for item in answered_parts or ["- No completed step produced a reusable final output."]),
+        "",
+        "Could not answer completely:",
+        f"- {unanswered}",
+    ]
+    state["final_answer"] = "\n".join(lines).strip()
+    state["analysis"] = state["final_answer"]
+    state["workflow_status"] = "best_effort_ready"
+    return state

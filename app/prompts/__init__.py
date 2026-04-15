@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 @lru_cache(maxsize=1)
 def _prompt_environment() -> Environment:
-    """Create a strict Jinja environment for agent prompts."""
+    """Create a strict Jinja environment for workflow prompts."""
 
     templates_dir = Path(__file__).resolve().parent
     return Environment(
@@ -23,7 +23,7 @@ def _prompt_environment() -> Environment:
 
 
 def render_prompt(template_name: str, **context: object) -> str:
-    """Render a prompt template with the provided context."""
+    """Render one prompt template with the provided context."""
 
     template = _prompt_environment().get_template(template_name)
     return template.render(**context).strip()

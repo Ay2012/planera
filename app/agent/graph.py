@@ -1,4 +1,4 @@
-"""LangGraph workflow: schema context, compiled plan, deterministic execution, analysis."""
+"""LangGraph orchestration for the schema-grounded analytics workflow."""
 
 from __future__ import annotations
 
@@ -7,25 +7,46 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.analysis import run_analysis_narrative
-from app.agent.executor import execute_plan, execute_single_plan_step
-from app.agent.planner import plan_compiled_query, repair_failed_step
+from app.agent.analysis import analyze_workflow
+from app.agent.executor import build_best_effort_state, execute_current_step
+from app.agent.planner import plan_analysis, replan_analysis
+from app.agent.query_writer import write_step_query
 from app.agent.state import AnalysisState, create_initial_state
 from app.data.semantic_model import get_semantic_context
-from app.utils.logging import get_logger
-
-logger = get_logger(__name__)
 
 
-def _append_trace(state: AnalysisState, step: str, status: str, details: dict[str, Any] | None = None) -> None:
-    state["trace"].append({"step": step, "status": status, "details": details or {}})
+def _append_trace(state: dict[str, Any], step: str, status: str, details: dict[str, Any] | None = None) -> None:
+    state.setdefault("trace", []).append({"step": step, "status": status, "details": details or {}})
 
 
-def _append_error(state: AnalysisState, step: str, message: str, recoverable: bool = True, details: dict[str, Any] | None = None) -> None:
-    state["errors"].append({"step": step, "message": message, "recoverable": recoverable, "details": details or {}})
+def _append_error(
+    state: dict[str, Any],
+    *,
+    step: str,
+    message: str,
+    recoverable: bool,
+    details: dict[str, Any] | None = None,
+) -> None:
+    state.setdefault("errors", []).append(
+        {
+            "step": step,
+            "message": message,
+            "recoverable": recoverable,
+            "details": details or {},
+        }
+    )
 
 
-def load_schema_context_node(state: AnalysisState) -> AnalysisState:
+def run_analysis(query: str, source_ids: list[str] | None = None) -> dict[str, Any]:
+    """Compatibility entrypoint used by the API service layer."""
+
+    workflow = build_graph()
+    return workflow.invoke(create_initial_state(query, source_ids=source_ids))
+
+
+def load_schema_context_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Load schema context into workflow state."""
+
     step_name = "load_schema_context_node"
     _append_trace(state, step_name, "started", {})
     context = get_semantic_context(state.get("source_ids"))
@@ -34,136 +55,196 @@ def load_schema_context_node(state: AnalysisState) -> AnalysisState:
         state,
         step_name,
         "completed",
-        {"reference_date": context.reference_date, "views": [v["name"] for v in context.schema_manifest.get("views", [])]},
+        {
+            "reference_date": context.reference_date,
+            "relations": [relation["name"] for relation in context.schema_manifest.get("relations", [])],
+        },
+    )
+    state["workflow_status"] = "schema_ready"
+    return state
+
+
+def planner_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Create the full ordered plan for the request."""
+
+    step_name = "planner_node"
+    _append_trace(state, step_name, "started", {"replan_count": state.get("replan_count", 0)})
+    try:
+        state = plan_analysis(state)
+    except Exception as exc:
+        message = str(exc)
+        _append_error(state, step=step_name, message=message, recoverable=False)
+        _append_trace(state, step_name, "failed", {"message": message})
+        state["failure_summary"] = message
+        state["workflow_status"] = "best_effort"
+        return state
+
+    steps = list((state.get("current_plan") or {}).get("steps") or [])
+    if steps:
+        _append_trace(state, step_name, "completed", {"step_count": len(steps)})
+        state["workflow_status"] = "plan_ready"
+    else:
+        _append_trace(state, step_name, "completed", {"step_count": 0})
+        state["workflow_status"] = "ready_for_analysis"
+    return state
+
+
+def query_writer_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Generate exactly one query for the current step."""
+
+    step_name = "query_writer_node"
+    _append_trace(state, step_name, "started", {"current_step_index": state.get("current_step_index", 0)})
+    try:
+        state = write_step_query(state)
+    except Exception as exc:
+        message = str(exc)
+        _append_error(state, step=step_name, message=message, recoverable=False)
+        _append_trace(state, step_name, "failed", {"message": message})
+        state["failure_summary"] = message
+        state["workflow_status"] = "best_effort"
+        return state
+
+    generated_query = state.get("generated_query") or {}
+    _append_trace(
+        state,
+        step_name,
+        "completed",
+        {"step_id": generated_query.get("step_id"), "query_length": len(generated_query.get("sql", ""))},
     )
     return state
 
 
-def planner_compiled_node(state: AnalysisState) -> AnalysisState:
-    step_name = "planner_compiled_node"
-    _append_trace(state, step_name, "started", {"total_steps": state["total_steps"]})
+def executor_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Execute the current step and store any successful output."""
+
+    step_name = "executor_node"
+    current_step_index = state.get("current_step_index", 0)
+    _append_trace(state, step_name, "started", {"current_step_index": current_step_index})
     try:
-        state = plan_compiled_query(state)
-        plan = state.get("compiled_plan") or {}
-        _append_trace(
-            state,
-            step_name,
-            "completed",
-            {
-                "objective": plan.get("objective"),
-                "step_count": len(plan.get("plan") or []),
-                "metric": plan.get("metric"),
-            },
-        )
+        state = execute_current_step(state)
     except Exception as exc:
-        logger.warning("%s failed: %s", step_name, exc, exc_info=True)
-        _append_error(state, step_name, str(exc), recoverable=False)
-        state["workflow_status"] = "planner_failed"
-        state["compiled_plan"] = None
-        _append_trace(state, step_name, "failed", {"message": str(exc)})
+        message = str(exc)
+        _append_error(state, step=step_name, message=message, recoverable=False)
+        _append_trace(state, step_name, "failed", {"message": message})
+        state["failure_summary"] = message
+        state["workflow_status"] = "best_effort"
+        return state
+
+    _append_trace(state, step_name, "completed", {"workflow_status": state.get("workflow_status", "")})
     return state
 
 
-def execute_plan_node(state: AnalysisState) -> AnalysisState:
-    step_name = "execute_plan_node"
-    if state["workflow_status"] == "planner_failed" or not state.get("compiled_plan"):
-        _append_trace(state, step_name, "skipped", {"reason": "no compiled plan"})
-        return state
+def analyzer_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Produce the final answer or request a replan."""
 
-    plan = state["compiled_plan"]
-    if not plan.get("plan"):
-        msg = "Planner returned an empty plan."
-        _append_error(state, step_name, msg, recoverable=False)
-        state["workflow_status"] = "execution_failed"
-        _append_trace(state, step_name, "failed", {"message": msg})
-        return state
-
-    _append_trace(state, step_name, "started", {"steps": len(plan["plan"])})
-    outcome = execute_plan(state, plan)
-
-    if outcome["status"] == "success":
-        state["workflow_status"] = "ready_to_analyze"
-        _append_trace(state, step_name, "completed", {"status": "success"})
-        return state
-
-    failed_id = outcome["failed_step_id"]
-    err = outcome.get("error", "Unknown execution error")
-
+    step_name = "analyzer_node"
+    _append_trace(state, step_name, "started", {"workflow_status": state.get("workflow_status", "")})
     try:
-        state = repair_failed_step(state, failed_id, err)
+        state = analyze_workflow(state)
     except Exception as exc:
-        _append_error(state, "repair_planner", str(exc), recoverable=False, details={"failed_step_id": failed_id})
-        state["workflow_status"] = "execution_failed"
-        _append_trace(state, step_name, "failed", {"phase": "repair", "message": str(exc)})
+        message = str(exc)
+        _append_error(state, step=step_name, message=message, recoverable=False)
+        _append_trace(state, step_name, "failed", {"message": message})
+        state["failure_summary"] = message
+        state["workflow_status"] = "best_effort"
         return state
 
-    if state["executed_steps"] and state["executed_steps"][-1]["status"] == "failed":
-        state["executed_steps"].pop()
-
-    plan = state["compiled_plan"] or {}
-    step_row = next((r for r in (plan.get("plan") or []) if str(r.get("id")) == str(failed_id)), None)
-    if not step_row:
-        _append_error(state, step_name, "Repaired step missing from plan.", recoverable=False)
-        state["workflow_status"] = "execution_failed"
-        return state
-
-    retry = execute_single_plan_step(state, step_row, attempt=2)
-    if retry["status"] == "failed":
-        _append_error(
-            state,
-            step_name,
-            f"Step {retry.get('failed_step_id', failed_id)} failed after repair: {retry.get('error', err)}",
-            recoverable=False,
-            details={"failed_step_id": failed_id},
-        )
-        state["workflow_status"] = "execution_failed"
-        _append_trace(state, step_name, "failed", {"phase": "retry", "failed_step_id": failed_id})
-    else:
-        state["workflow_status"] = "ready_to_analyze"
-        _append_trace(state, step_name, "completed", {"status": "success_after_repair"})
-
+    decision = (state.get("analyzer_result") or {}).get("decision", "")
+    _append_trace(state, step_name, "completed", {"decision": decision})
     return state
 
 
-def analysis_node(state: AnalysisState) -> AnalysisState:
-    step_name = "analysis_node"
-    _append_trace(state, step_name, "started", {"workflow_status": state["workflow_status"]})
+def replan_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Request one bounded replan after analyzer or execution failure."""
+
+    step_name = "replan_node"
+    _append_trace(state, step_name, "started", {"failure_summary": state.get("failure_summary", "")})
     try:
-        state = run_analysis_narrative(state)
-        _append_trace(state, step_name, "completed", {"length": len(state["analysis"])})
+        state = replan_analysis(state)
     except Exception as exc:
-        state["analysis"] = f"The analysis step failed: {exc}"
-        _append_error(state, step_name, str(exc), recoverable=False)
-        _append_trace(state, step_name, "failed", {"message": str(exc)})
+        message = str(exc)
+        _append_error(state, step=step_name, message=message, recoverable=False)
+        _append_trace(state, step_name, "failed", {"message": message})
+        state["failure_summary"] = message
+        state["workflow_status"] = "best_effort"
+        return state
+
+    state["current_step_index"] = 0
+    state["generated_query"] = None
+    state["stored_outputs"] = {}
+    state["workflow_status"] = "plan_ready" if (state.get("current_plan") or {}).get("steps") else "ready_for_analysis"
+    _append_trace(state, step_name, "completed", {"replan_count": state.get("replan_count", 0)})
     return state
 
 
-def route_after_planner(state: AnalysisState) -> str:
-    if state["workflow_status"] == "planner_failed":
-        return "analysis_node"
-    return "execute_plan_node"
+def best_effort_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the final best-effort answer when retry limits are exhausted."""
+
+    step_name = "best_effort_node"
+    _append_trace(state, step_name, "started", {"failure_summary": state.get("failure_summary", "")})
+    state = build_best_effort_state(state)
+    _append_trace(state, step_name, "completed", {"workflow_status": state.get("workflow_status", "")})
+    state = analyze_workflow(state)
+    return state
+
+
+def _route_after_planner(state: dict[str, Any]) -> str:
+    status = state.get("workflow_status")
+    if status == "plan_ready":
+        return "query_writer_node"
+    if status == "best_effort":
+        return "best_effort_node"
+    return "analyzer_node"
+
+
+def _route_after_executor(state: dict[str, Any]) -> str:
+    status = state.get("workflow_status")
+    if status in {"plan_ready", "retry_same_step"}:
+        return "query_writer_node"
+    if status == "needs_replan":
+        return "replan_node"
+    if status == "best_effort":
+        return "best_effort_node"
+    return "analyzer_node"
+
+
+def _route_after_analyzer(state: dict[str, Any]) -> str:
+    status = state.get("workflow_status")
+    if status == "needs_replan":
+        return "replan_node"
+    if status == "best_effort":
+        return "best_effort_node"
+    return END
+
+
+def _route_after_replan(state: dict[str, Any]) -> str:
+    status = state.get("workflow_status")
+    if status == "plan_ready":
+        return "query_writer_node"
+    if status == "best_effort":
+        return "best_effort_node"
+    return "analyzer_node"
 
 
 @lru_cache(maxsize=1)
 def build_graph():
-    """Compile and cache the LangGraph workflow."""
+    """Compile and cache the analytics workflow graph."""
 
     graph = StateGraph(AnalysisState)
     graph.add_node("load_schema_context_node", load_schema_context_node)
-    graph.add_node("planner_compiled_node", planner_compiled_node)
-    graph.add_node("execute_plan_node", execute_plan_node)
-    graph.add_node("analysis_node", analysis_node)
+    graph.add_node("planner_node", planner_node)
+    graph.add_node("query_writer_node", query_writer_node)
+    graph.add_node("executor_node", executor_node)
+    graph.add_node("analyzer_node", analyzer_node)
+    graph.add_node("replan_node", replan_node)
+    graph.add_node("best_effort_node", best_effort_node)
 
     graph.add_edge(START, "load_schema_context_node")
-    graph.add_edge("load_schema_context_node", "planner_compiled_node")
-    graph.add_conditional_edges("planner_compiled_node", route_after_planner)
-    graph.add_edge("execute_plan_node", "analysis_node")
-    graph.add_edge("analysis_node", END)
+    graph.add_edge("load_schema_context_node", "planner_node")
+    graph.add_conditional_edges("planner_node", _route_after_planner)
+    graph.add_edge("query_writer_node", "executor_node")
+    graph.add_conditional_edges("executor_node", _route_after_executor)
+    graph.add_conditional_edges("analyzer_node", _route_after_analyzer)
+    graph.add_conditional_edges("replan_node", _route_after_replan)
+    graph.add_edge("best_effort_node", END)
     return graph.compile()
-
-
-def run_analysis(query: str, source_ids: list[str] | None = None) -> AnalysisState:
-    """Execute the full workflow for a single user query."""
-
-    workflow = build_graph()
-    return workflow.invoke(create_initial_state(query, source_ids=source_ids))
