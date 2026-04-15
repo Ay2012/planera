@@ -5,7 +5,7 @@ The previous plan or execution path failed and needs one revised full plan.
 Rules:
 - Return only valid JSON matching the schema.
 - Do not write SQL.
-- Use only relations, columns, and join paths present in the schema/context summary.
+- Use only relations, columns, and join paths present in the provided schema contract.
 - Use the failure summary to avoid repeating the same mistake.
 - If the question is only partially answerable, set `can_answer_fully` to false and explain the gap in `unsupported_requirements`.
 - If the available data can no longer support any safe next step, return zero steps.
@@ -21,5 +21,10 @@ Current plan:
 Failure summary:
 {{ failure_summary }}
 
+{% if planner_input_json %}
+Raw planner input:
+{{ planner_input_json }}
+{% else %}
 Compact schema/context summary:
 {{ schema_context_json }}
+{% endif %}

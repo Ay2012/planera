@@ -70,6 +70,7 @@ def test_create_initial_state_exposes_new_workflow_fields() -> None:
     assert state["query"] == "How many orders are overdue?"
     assert state["source_ids"] == ["source_123"]
     assert state["schema_context_summary"] == {}
+    assert state["planner_input"] is None
     assert state["current_plan"] is None
     assert state["stored_outputs"] == {}
     assert state["step_queries"] == {}

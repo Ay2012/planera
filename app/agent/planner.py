@@ -7,9 +7,10 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from app.data.planner_input import build_planner_input as _build_raw_planner_input
 from app.llm import get_llm_client
 from app.prompts import render_prompt
-from app.schemas import AnalysisPlan, CompactSchemaColumn, CompactSchemaContext, CompactSchemaRelation
+from app.schemas import AnalysisPlan, CompactSchemaColumn, CompactSchemaContext, CompactSchemaRelation, PlannerInput
 
 
 _MAX_PROMPT_RELATIONS = 4
@@ -132,6 +133,7 @@ def _coerce_relation(relation: dict[str, Any]) -> CompactSchemaRelation:
 def _render_plan_prompt(
     *,
     query: str,
+    planner_input_json: dict[str, Any] | None = None,
     schema_context_summary: dict[str, Any],
     failure_summary: str = "",
     current_plan: dict[str, Any] | None = None,
@@ -140,10 +142,35 @@ def _render_plan_prompt(
     return render_prompt(
         template_name,
         query=query,
+        planner_input_json=json.dumps(planner_input_json, indent=2) if planner_input_json else "",
         schema_context_json=json.dumps(schema_context_summary, indent=2),
         failure_summary=failure_summary,
         current_plan_json=json.dumps(current_plan or {}, indent=2),
     )
+
+
+def _planner_input_for_state(state: dict[str, Any]) -> dict[str, Any] | None:
+    existing = state.get("planner_input")
+    if isinstance(existing, dict):
+        if existing.get("sources") or existing.get("relationships"):
+            return existing
+        return None
+
+    source_ids = list(state.get("source_ids") or [])
+    if not source_ids:
+        return None
+
+    try:
+        planner_input = _build_raw_planner_input(state["query"], source_ids=source_ids)
+    except Exception:
+        return None
+
+    payload = planner_input.model_dump()
+    if not payload.get("sources") and not payload.get("relationships"):
+        return None
+
+    state["planner_input"] = payload
+    return payload
 
 
 def build_compact_schema_context(dataset_context: dict[str, Any], question: str) -> dict[str, Any]:
@@ -183,12 +210,17 @@ def build_compact_schema_context(dataset_context: dict[str, Any], question: str)
 def plan_analysis(state: dict[str, Any]) -> dict[str, Any]:
     """Return the planner-authored full workflow plan."""
 
+    planner_input = _planner_input_for_state(state)
     schema_context_summary = state.get("schema_context_summary") or build_compact_schema_context(
         state.get("dataset_context", {}),
         state["query"],
     )
     state["schema_context_summary"] = schema_context_summary
-    prompt = _render_plan_prompt(query=state["query"], schema_context_summary=schema_context_summary)
+    prompt = _render_plan_prompt(
+        query=state["query"],
+        planner_input_json=planner_input,
+        schema_context_summary=schema_context_summary,
+    )
     result = get_llm_client().generate_json(prompt, schema=AnalysisPlan)
     parsed = result if isinstance(result, AnalysisPlan) else AnalysisPlan.model_validate(result)
     state["current_plan"] = parsed.model_dump()
@@ -200,6 +232,7 @@ def plan_analysis(state: dict[str, Any]) -> dict[str, Any]:
 def replan_analysis(state: dict[str, Any]) -> dict[str, Any]:
     """Return one revised workflow plan after failure."""
 
+    planner_input = _planner_input_for_state(state)
     schema_context_summary = state.get("schema_context_summary") or build_compact_schema_context(
         state.get("dataset_context", {}),
         state["query"],
@@ -207,6 +240,7 @@ def replan_analysis(state: dict[str, Any]) -> dict[str, Any]:
     state["schema_context_summary"] = schema_context_summary
     prompt = _render_plan_prompt(
         query=state["query"],
+        planner_input_json=planner_input,
         schema_context_summary=schema_context_summary,
         failure_summary=state.get("failure_summary", ""),
         current_plan=state.get("current_plan"),
@@ -232,9 +266,16 @@ def plan_compiled_query(state: dict[str, Any]) -> dict[str, Any]:
     return plan_analysis(state)
 
 
+def build_planner_input(query: str, source_ids: list[str] | None = None) -> PlannerInput:
+    """Build the raw-schema planner contract for attached uploads."""
+
+    return _build_raw_planner_input(query, source_ids=source_ids)
+
+
 __all__ = [
     "_schema_subset_for_question",
     "build_compact_schema_context",
+    "build_planner_input",
     "get_llm_client",
     "plan_analysis",
     "plan_compiled_query",

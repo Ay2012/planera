@@ -152,6 +152,97 @@ class SchemaManifest(BaseModel):
     views: list[dict[str, Any]] = Field(default_factory=list)
 
 
+PlannerAggregationLiteral = Literal["count", "sum", "avg", "min", "max"]
+
+
+class PlannerRelationshipKey(BaseModel):
+    """One confirmed join key carried into planner input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    left_column: str = Field(..., min_length=1)
+    right_column: str = Field(..., min_length=1)
+
+
+class PlannerColumn(BaseModel):
+    """Planner-facing raw column metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_name: str = Field(..., min_length=1)
+    column_name: str = Field(..., min_length=1)
+    data_type: str = Field(..., min_length=1)
+    nullable: bool = True
+    source_path: str | None = None
+    source_description: str | None = None
+    semantic_role: Literal["identifier", "time", "measure", "dimension", "boolean", "unknown"] = "unknown"
+    filterable: bool = True
+    groupable: bool = True
+    aggregatable: bool = False
+    allowed_aggregations: list[PlannerAggregationLiteral] = Field(default_factory=list)
+
+
+class PlannerTable(BaseModel):
+    """Planner-facing raw table metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(..., min_length=1)
+    table_name: str = Field(..., min_length=1)
+    kind: Literal["table"] = "table"
+    row_count: int = 0
+    source_description: str | None = None
+    grain: str = ""
+    table_purpose: str = ""
+    identifier_columns: list[str] = Field(default_factory=list)
+    time_columns: list[str] = Field(default_factory=list)
+    measure_columns: list[str] = Field(default_factory=list)
+    dimension_columns: list[str] = Field(default_factory=list)
+    filterable_columns: list[str] = Field(default_factory=list)
+    groupable_columns: list[str] = Field(default_factory=list)
+    aggregatable_columns: list[str] = Field(default_factory=list)
+    columns: list[PlannerColumn] = Field(default_factory=list)
+
+
+class PlannerSource(BaseModel):
+    """One attached uploaded source visible to the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(..., min_length=1)
+    source_name: str = Field(..., min_length=1)
+    source_format: Literal["csv", "tsv", "json"]
+    source_description: str | None = None
+    tables: list[PlannerTable] = Field(default_factory=list)
+
+
+class PlannerRelationship(BaseModel):
+    """One confirmed relationship visible to the planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    left_source_id: str = Field(..., min_length=1)
+    left_table: str = Field(..., min_length=1)
+    right_source_id: str = Field(..., min_length=1)
+    right_table: str = Field(..., min_length=1)
+    relationship_type: Literal["parent_child", "explicit"]
+    cardinality: Literal["one_to_one", "one_to_many", "many_to_one", "unknown"] = "unknown"
+    join_keys: list[PlannerRelationshipKey] = Field(default_factory=list)
+    join_safety: Literal["safe_raw_join", "aggregate_child_before_join", "manual_review_required"] = "manual_review_required"
+    confirmed_by: Literal["json_nesting", "user_link", "registry_rule"]
+
+
+class PlannerInput(BaseModel):
+    """Full raw-schema planner input built from attached uploads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_query: str = Field(..., min_length=1)
+    execution_dialect: str = Field(..., min_length=1)
+    sources: list[PlannerSource] = Field(default_factory=list)
+    relationships: list[PlannerRelationship] = Field(default_factory=list)
+
+
 class CompactSchemaColumn(BaseModel):
     """Compact field summary shared with the planner, query writer, and analyzer."""
 

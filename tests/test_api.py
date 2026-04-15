@@ -217,16 +217,32 @@ def test_upload_endpoint_profiles_json(client: TestClient) -> None:
     assert payload["asset"]["primaryRelationName"]
 
 
+def test_upload_endpoint_profiles_tsv(client: TestClient) -> None:
+    token = _signup(client, "upload-tsv@example.com")
+    response = client.post(
+        "/uploads",
+        files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\nwon\t25\n"), "text/tab-separated-values")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset"]["type"] == "TSV"
+    assert payload["asset"]["rows"] == 2
+    assert payload["asset"]["columns"] == 2
+    assert payload["asset"]["relationCount"] == 1
+
+
 def test_upload_endpoint_rejects_unsupported_file_types(client: TestClient) -> None:
     token = _signup(client, "upload-unsupported@example.com")
     response = client.post(
         "/uploads",
-        files={"file": ("pipeline.tsv", BytesIO(b"stage\tamount\nopen\t10\n"), "text/tab-separated-values")},
+        files={"file": ("pipeline.txt", BytesIO(b"stage amount\nopen 10\n"), "text/plain")},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "Only CSV and JSON uploads are currently supported."
+    assert response.json()["detail"]["message"] == "Only CSV, TSV, and JSON uploads are currently supported."
 
 
 def test_upload_endpoint_migrates_legacy_uploads_table(tmp_path, monkeypatch) -> None:

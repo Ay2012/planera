@@ -13,6 +13,7 @@ class AnalysisState(TypedDict, total=False):
     query: str
     source_ids: list[str]
     dataset_context: dict[str, Any]
+    planner_input: dict[str, Any] | None
     schema_context_summary: dict[str, Any]
     current_plan: dict[str, Any] | None
     current_step_index: int
@@ -39,6 +40,7 @@ def create_initial_state(query: str, source_ids: list[str] | None = None) -> Ana
         query=query,
         source_ids=list(source_ids or []),
         dataset_context={},
+        planner_input=None,
         schema_context_summary={},
         current_plan=None,
         current_step_index=0,
