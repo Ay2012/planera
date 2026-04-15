@@ -9,8 +9,8 @@ interface InsightCardProps {
 
 const toneStyles = {
   neutral: "bg-panel",
-  positive: "bg-green-50/70",
-  caution: "bg-amber-50/80",
+  positive: "bg-success-soft/70",
+  caution: "bg-warning-soft/80",
 };
 
 export function InsightCard({ title, body, tone = "neutral" }: InsightCardProps) {

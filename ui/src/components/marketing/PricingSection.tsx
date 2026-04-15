@@ -69,7 +69,7 @@ export function PricingSection() {
           className="overflow-hidden rounded-[36px] border border-line bg-panel px-6 py-8 shadow-soft sm:px-8 sm:py-10 lg:px-10"
           style={{
             backgroundImage:
-              "radial-gradient(circle at top right, rgba(35, 88, 82, 0.14), transparent 30%), linear-gradient(180deg, rgba(255, 253, 249, 0.96), rgba(247, 242, 234, 0.92))",
+              "radial-gradient(circle at top right, rgb(var(--color-accent) / 0.16), transparent 30%), linear-gradient(180deg, rgb(var(--color-panel) / 0.96), rgb(var(--color-elevated) / 0.92))",
           }}
         >
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.46fr)] lg:items-end">
@@ -82,7 +82,7 @@ export function PricingSection() {
               </p>
             </div>
 
-            <Card className="rounded-[28px] border-white/70 bg-white/70 p-6 backdrop-blur">
+            <Card className="rounded-[28px] border-line/70 bg-panel/75 p-6 backdrop-blur">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">All paid plans include</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                 {[
@@ -106,7 +106,7 @@ export function PricingSection() {
                 elevated
                 className={classNames(
                   "flex h-full flex-col rounded-[30px] p-7 sm:p-8",
-                  plan.featured ? "border-ink bg-ink text-white" : "bg-panel/85 backdrop-blur",
+                  plan.featured ? "border-contrast bg-contrast text-contrast-foreground" : "bg-panel/85 backdrop-blur",
                 )}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -114,42 +114,44 @@ export function PricingSection() {
                     <p
                       className={classNames(
                         "text-xs font-medium uppercase tracking-[0.18em]",
-                        plan.featured ? "text-white/70" : "text-muted",
+                        plan.featured ? "text-contrast-foreground/70" : "text-muted",
                       )}
                     >
                       {plan.label}
                     </p>
-                    <h3 className={classNames("mt-4 text-3xl", plan.featured ? "text-white" : "text-ink")}>{plan.name}</h3>
+                    <h3 className={classNames("mt-4 text-3xl", plan.featured ? "text-contrast-foreground" : "text-ink")}>{plan.name}</h3>
                   </div>
                   {plan.featured ? (
-                    <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-white">
+                    <span className="rounded-full border border-contrast-foreground/20 bg-contrast-foreground/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-contrast-foreground">
                       Popular
                     </span>
                   ) : null}
                 </div>
 
-                <p className={classNames("mt-4 text-sm leading-7", plan.featured ? "text-white/72" : "text-muted")}>{plan.description}</p>
+                <p className={classNames("mt-4 text-sm leading-7", plan.featured ? "text-contrast-foreground/72" : "text-muted")}>{plan.description}</p>
 
                 <div className="mt-8 flex items-end gap-3">
-                  <span className={classNames("text-5xl leading-none", plan.featured ? "text-white" : "text-ink")}>{plan.price}</span>
-                  <span className={classNames("pb-1 text-sm", plan.featured ? "text-white/72" : "text-muted")}>{plan.cadence}</span>
+                  <span className={classNames("text-5xl leading-none", plan.featured ? "text-contrast-foreground" : "text-ink")}>{plan.price}</span>
+                  <span className={classNames("pb-1 text-sm", plan.featured ? "text-contrast-foreground/72" : "text-muted")}>{plan.cadence}</span>
                 </div>
 
-                <p className={classNames("mt-3 text-sm leading-6", plan.featured ? "text-white/72" : "text-muted")}>{plan.note}</p>
+                <p className={classNames("mt-3 text-sm leading-6", plan.featured ? "text-contrast-foreground/72" : "text-muted")}>{plan.note}</p>
 
                 <Link className="mt-8 block" to={plan.href}>
                   <Button
                     fullWidth
                     size="lg"
                     variant={plan.featured ? "secondary" : "primary"}
-                    className={classNames(plan.featured ? "border-white/15 bg-white text-ink hover:bg-white/90" : undefined)}
+                    className={classNames(
+                      plan.featured ? "border-contrast-foreground/15 bg-contrast-foreground text-contrast-foreground/100 hover:bg-contrast-foreground/90" : undefined,
+                    )}
                   >
                     {plan.cta}
                   </Button>
                 </Link>
 
-                <div className={classNames("mt-8 border-t pt-6", plan.featured ? "border-white/10" : "border-line")}>
-                  <p className={classNames("text-xs font-medium uppercase tracking-[0.18em]", plan.featured ? "text-white/70" : "text-muted")}>
+                <div className={classNames("mt-8 border-t pt-6", plan.featured ? "border-contrast-foreground/10" : "border-line")}>
+                  <p className={classNames("text-xs font-medium uppercase tracking-[0.18em]", plan.featured ? "text-contrast-foreground/70" : "text-muted")}>
                     What&apos;s included
                   </p>
                   <ul className="mt-4 space-y-3">
@@ -158,10 +160,10 @@ export function PricingSection() {
                         <span
                           className={classNames(
                             "mt-[9px] h-2.5 w-2.5 flex-none rounded-full",
-                            plan.featured ? "bg-white" : "bg-accent",
+                            plan.featured ? "bg-contrast-foreground" : "bg-accent",
                           )}
                         />
-                        <span className={classNames("text-sm leading-6", plan.featured ? "text-white/82" : "text-ink")}>{feature}</span>
+                        <span className={classNames("text-sm leading-6", plan.featured ? "text-contrast-foreground/82" : "text-ink")}>{feature}</span>
                       </li>
                     ))}
                   </ul>

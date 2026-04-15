@@ -12,11 +12,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, PropsWith
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-ink text-white shadow-card hover:bg-black/90 focus-visible:ring-ink/20",
+    "bg-contrast text-contrast-foreground shadow-card hover:bg-contrast/90 focus-visible:ring-accent/30",
   secondary:
-    "border border-line bg-panel text-ink hover:border-ink/20 hover:bg-white",
+    "border border-line bg-panel text-ink hover:border-line/90 hover:bg-surface",
   ghost:
-    "bg-transparent text-muted hover:bg-black/[0.03] hover:text-ink",
+    "bg-transparent text-muted hover:bg-surface hover:text-ink",
   subtle:
     "bg-accent-soft text-accent-strong hover:bg-accent-soft/80",
 };

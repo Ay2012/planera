@@ -1,19 +1,58 @@
-:root {
-  --color-canvas: #f4efe8;
-  --color-surface: #faf7f2;
-  --color-panel: #fffdf9;
-  --color-elevated: #f7f2ea;
-  --color-line: #d9d0c4;
-  --color-ink: #161819;
-  --color-muted: #636c72;
-  --color-accent: #235852;
-  --color-accent-soft: #d9ebe7;
-  --color-accent-strong: #193f3b;
-  --color-success: #2f6d5a;
-  --color-warning: #8a6227;
-  --color-danger: #8c4141;
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: 244 239 232;
+  --color-surface: 250 247 242;
+  --color-panel: 255 253 249;
+  --color-elevated: 247 242 234;
+  --color-line: 217 208 196;
+  --color-ink: 22 24 25;
+  --color-muted: 99 108 114;
+  --color-contrast: 22 24 25;
+  --color-contrast-foreground: 255 255 255;
+  --color-accent: 35 88 82;
+  --color-accent-soft: 217 235 231;
+  --color-accent-strong: 25 63 59;
+  --color-success: 47 109 90;
+  --color-success-soft: 227 241 234;
+  --color-warning: 138 98 39;
+  --color-warning-soft: 247 236 215;
+  --color-danger: 140 65 65;
+  --color-danger-soft: 250 232 232;
+  --color-code: 17 20 23;
+  --color-code-ink: 230 239 233;
   --shadow-soft: 0 16px 48px rgba(24, 32, 34, 0.07);
   --shadow-card: 0 12px 28px rgba(24, 32, 34, 0.06);
+  --shadow-field: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --surface-ring: rgba(255, 255, 255, 0.65);
   --radius-panel: 28px;
   --radius-card: 22px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: 10 14 18;
+  --color-surface: 17 23 29;
+  --color-panel: 24 30 37;
+  --color-elevated: 31 39 47;
+  --color-line: 66 78 89;
+  --color-ink: 231 237 240;
+  --color-muted: 159 170 178;
+  --color-contrast: 235 241 243;
+  --color-contrast-foreground: 12 16 20;
+  --color-accent: 55 131 120;
+  --color-accent-soft: 27 56 52;
+  --color-accent-strong: 195 231 224;
+  --color-success: 118 200 172;
+  --color-success-soft: 25 52 46;
+  --color-warning: 229 183 93;
+  --color-warning-soft: 71 50 21;
+  --color-danger: 243 156 156;
+  --color-danger-soft: 76 37 37;
+  --color-code: 12 17 22;
+  --color-code-ink: 226 236 232;
+  --shadow-soft: 0 22px 56px rgba(1, 5, 9, 0.42);
+  --shadow-card: 0 14px 34px rgba(1, 5, 9, 0.34);
+  --shadow-field: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --surface-ring: rgba(255, 255, 255, 0.04);
 }

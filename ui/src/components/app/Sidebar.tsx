@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/shared/Button";
 import { Drawer } from "@/components/shared/Drawer";
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { useAuth } from "@/hooks/useAuth";
 import { sidebarNavItems } from "@/lib/constants";
 import { classNames } from "@/lib/classNames";
@@ -40,17 +41,17 @@ function BrandMark({ showExpandCue = false }: { showExpandCue?: boolean }) {
   return (
     <div
       className={classNames(
-        "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-ink text-sm font-semibold text-white shadow-card transition-all duration-300",
+        "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-contrast text-sm font-semibold text-contrast-foreground shadow-card transition-all duration-300",
         showExpandCue && "group-hover:shadow-soft",
       )}
     >
       <span className={classNames("relative z-[1] transition-opacity duration-300", showExpandCue && "group-hover:opacity-0")}>P</span>
       {showExpandCue ? (
         <>
-          <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-contrast-foreground/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
           <svg
             aria-hidden="true"
-            className="pointer-events-none absolute z-[2] h-4 w-4 -translate-x-1 text-white opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+            className="pointer-events-none absolute z-[2] h-4 w-4 -translate-x-1 text-contrast-foreground opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
             viewBox="0 0 16 16"
             fill="none"
           >
@@ -130,6 +131,11 @@ function SidebarContent({
         {!collapsed ? "New Chat" : null}
       </Button>
 
+      <ThemeToggle
+        showLabel={!collapsed}
+        className={classNames(collapsed ? "!mx-auto" : "w-full justify-start rounded-2xl px-3")}
+      />
+
       <div className={classNames("space-y-2", collapsed && "w-full")}>
         {sidebarNavItems.map((item) => {
           const active = item.id === activeSection;
@@ -145,7 +151,7 @@ function SidebarContent({
                 collapsed
                   ? "mx-auto flex h-12 w-12 items-center justify-center rounded-2xl p-0 transition"
                   : "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition",
-                active ? "bg-ink text-white shadow-card" : "text-muted hover:bg-panel hover:text-ink",
+                active ? "bg-contrast text-contrast-foreground shadow-card" : "text-muted hover:bg-panel hover:text-ink",
               )}
             >
               <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">

@@ -27,7 +27,7 @@ export function SqlPreview({ code, compact = false }: SqlPreviewProps) {
           {copied ? "Copied" : "Copy SQL"}
         </Button>
       </div>
-      <pre className={`max-w-full overflow-x-auto bg-[#111417] p-4 font-mono text-xs leading-6 text-[#e6efe9] ${compact ? "max-h-52" : ""}`}>
+      <pre className={`max-w-full overflow-x-auto bg-code p-4 font-mono text-xs leading-6 text-code-ink ${compact ? "max-h-52" : ""}`}>
         <code>{code}</code>
       </pre>
     </Card>

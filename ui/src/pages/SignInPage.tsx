@@ -166,7 +166,7 @@ export function SignInPage() {
               </div>
 
               {error ? (
-                <div className="mb-4 rounded-2xl border border-danger/20 bg-red-50/60 px-4 py-3 text-sm text-danger" role="alert">
+                <div className="mb-4 rounded-2xl border border-danger/20 bg-danger-soft/80 px-4 py-3 text-sm text-danger" role="alert">
                   {error}
                 </div>
               ) : null}

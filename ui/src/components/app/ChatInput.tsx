@@ -123,7 +123,7 @@ export function ChatInput({
               <span className="min-w-0 text-xs text-muted">CSV or JSON only</span>
             </div>
             <Button onClick={onSubmit} disabled={isSubmitting || value.trim().length === 0}>
-              {isSubmitting ? <Spinner className="h-4 w-4 border-white/30 border-t-white" /> : null}
+              {isSubmitting ? <Spinner className="h-4 w-4 border-contrast-foreground/30 border-t-contrast-foreground" /> : null}
               Send
             </Button>
           </div>

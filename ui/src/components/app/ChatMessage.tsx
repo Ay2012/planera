@@ -21,9 +21,9 @@ export function ChatMessage({ message, onInspect }: ChatMessageProps) {
   if (!isAssistant) {
     return (
       <div className="flex min-w-0 justify-end">
-        <div className="w-full min-w-0 max-w-[720px] rounded-[24px] bg-ink px-5 py-4 text-sm leading-7 text-white shadow-card">
+        <div className="w-full min-w-0 max-w-[720px] rounded-[24px] bg-contrast px-5 py-4 text-sm leading-7 text-contrast-foreground shadow-card">
           <p>{message.content}</p>
-          <p className="mt-2 text-xs text-white/70">{formatTimestamp(message.createdAt)}</p>
+          <p className="mt-2 text-xs text-contrast-foreground/70">{formatTimestamp(message.createdAt)}</p>
         </div>
       </div>
     );
