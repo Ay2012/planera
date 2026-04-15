@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.models.conversation import Conversation, Message
 from app.models.user import User
 from app.schemas import (
+    AnalyzeResponse,
     ChatAssistantMessagePublic,
     ChatSubmitRequest,
     ChatTurnResponse,
@@ -52,6 +53,16 @@ def _preview_text(text: str | None, max_len: int = 120) -> str | None:
     if len(single_line) <= max_len:
         return single_line
     return f"{single_line[: max_len - 1]}…"
+
+
+def _assistant_metadata(result: AnalyzeResponse) -> dict:
+    serialized = result.model_dump(mode="json")
+    return {
+        "trace": serialized["trace"],
+        "executed_steps": serialized["executed_steps"],
+        "errors": serialized["errors"],
+        "inspection_id": serialized["inspection_id"],
+    }
 
 
 @router.get("/conversations", response_model=ConversationsListResponse)
@@ -173,12 +184,7 @@ def chat_turn(
             detail["error"] = str(exc)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail) from exc
 
-    assistant_meta: dict = {
-        "trace": [e.model_dump() for e in analysis_result.trace],
-        "executed_steps": [s.model_dump() for s in analysis_result.executed_steps],
-        "errors": [err.model_dump() for err in analysis_result.errors],
-        "inspection_id": analysis_result.inspection_id,
-    }
+    assistant_meta = _assistant_metadata(analysis_result)
     assistant_msg = Message(
         conversation_id=conv.id,
         role="assistant",

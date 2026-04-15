@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -106,6 +107,67 @@ def test_chat_appends_to_existing_conversation(chat_client: TestClient) -> None:
 
     detail = chat_client.get(f"/conversations/{cid}", headers={"Authorization": f"Bearer {token}"})
     assert len(detail.json()["messages"]) == 4
+
+
+def test_chat_serializes_timestamp_values_in_assistant_metadata(chat_client: TestClient) -> None:
+    import app.services.analysis_run as analysis_run
+
+    token = _signup(chat_client, "timestamp-chat@example.com")
+    original = analysis_run.run_analysis
+
+    def fake_analysis_with_timestamp(query: str, source_ids=None) -> dict:  # noqa: ARG001
+        return {
+            "analysis": "Monthly totals look stable.",
+            "trace": [{"step": "executor_node", "status": "completed", "details": {}}],
+            "executed_steps": [
+                {
+                    "id": "1",
+                    "kind": "sql",
+                    "purpose": "Aggregate charging activity by month",
+                    "code": "select month, total_energy_kwh from monthly_energy",
+                    "output_alias": "monthly_energy",
+                    "attempt": 1,
+                    "status": "success",
+                    "artifact": {
+                        "alias": "monthly_energy",
+                        "artifact_type": "table",
+                        "row_count": 1,
+                        "columns": ["month", "total_energy_kwh"],
+                        "preview_rows": [
+                            {
+                                "month": pd.Timestamp("2021-11-01 00:00:00"),
+                                "total_energy_kwh": 16843.64,
+                            }
+                        ],
+                        "summary": {},
+                    },
+                    "error": None,
+                }
+            ],
+            "errors": [],
+        }
+
+    analysis_run.run_analysis = fake_analysis_with_timestamp
+    try:
+        response = chat_client.post(
+            "/chat",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "How much charging happened each month?"},
+        )
+    finally:
+        analysis_run.run_analysis = original
+
+    assert response.status_code == 200, response.text
+    metadata = response.json()["assistant_message"]["metadata_json"]
+    row = metadata["executed_steps"][0]["artifact"]["preview_rows"][0]
+    assert row["month"] == "2021-11-01T00:00:00"
+    assert row["total_energy_kwh"] == 16843.64
+
+    conversation_id = response.json()["conversation"]["id"]
+    detail = chat_client.get(f"/conversations/{conversation_id}", headers={"Authorization": f"Bearer {token}"})
+    assert detail.status_code == 200
+    persisted_row = detail.json()["messages"][1]["metadata_json"]["executed_steps"][0]["artifact"]["preview_rows"][0]
+    assert persisted_row["month"] == "2021-11-01T00:00:00"
 
 
 def test_conversation_list_scoped_to_user(chat_client: TestClient) -> None:
