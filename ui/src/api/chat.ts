@@ -109,6 +109,7 @@ function mapApiMessagesToChatMessages(messages: ApiMessage[]): ChatMessage[] {
 }
 
 function mapPersistedAssistantToChatMessage(m: ApiMessage, promptForInspection: string): ChatMessage {
+  const v = m.metadata_json?.runtime_ms;
   const response: AnalyzeApiResponse = {
     analysis: m.content,
     trace: (m.metadata_json?.trace as AnalyzeApiResponse["trace"]) ?? [],
@@ -116,6 +117,7 @@ function mapPersistedAssistantToChatMessage(m: ApiMessage, promptForInspection: 
     errors: (m.metadata_json?.errors as AnalyzeApiResponse["errors"]) ?? [],
     inspection_id:
       typeof m.metadata_json?.inspection_id === "string" ? m.metadata_json.inspection_id : undefined,
+    runtime_ms: typeof v === "number" && Number.isFinite(v) ? v : null,
   };
   const mapped = mapAnalyzeResponseToUi(promptForInspection, response);
   cacheInspection(mapped.inspection);
@@ -163,6 +165,7 @@ export async function submitChatPrompt(payload: ChatRequest, accessToken: string
       executed_steps: raw.executed_steps,
       errors: raw.errors,
       inspection_id: raw.inspection_id ?? undefined,
+      runtime_ms: raw.runtime_ms,
     };
     const mapped = mapAnalyzeResponseToUi(payload.prompt, analyzeLike);
     cacheInspection(mapped.inspection);

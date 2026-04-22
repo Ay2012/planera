@@ -451,6 +451,7 @@ class AnalyzeResponse(BaseModel):
     executed_steps: list[ExecutedStep]
     errors: list[ErrorItem]
     inspection_id: str | None = None
+    runtime_ms: int | None = None
 
 
 MessageRoleLiteral = Literal["user", "assistant"]
@@ -546,6 +547,7 @@ class ChatTurnResponse(BaseModel):
     executed_steps: list[ExecutedStep]
     errors: list[ErrorItem]
     inspection_id: str | None = None
+    runtime_ms: int | None = None
 
 
 class HealthResponse(BaseModel):

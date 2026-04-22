@@ -62,6 +62,7 @@ def _assistant_metadata(result: AnalyzeResponse) -> dict:
         "executed_steps": serialized["executed_steps"],
         "errors": serialized["errors"],
         "inspection_id": serialized["inspection_id"],
+        "runtime_ms": serialized.get("runtime_ms"),
     }
 
 
@@ -222,4 +223,5 @@ def chat_turn(
         executed_steps=analysis_result.executed_steps,
         errors=analysis_result.errors,
         inspection_id=analysis_result.inspection_id,
+        runtime_ms=analysis_result.runtime_ms,
     )

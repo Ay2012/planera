@@ -81,6 +81,8 @@ export interface AnalyzeApiResponse {
   executed_steps: AnalyzeExecutedStep[];
   errors: AnalyzeErrorItem[];
   inspection_id?: string;
+  /** Wall-clock run time of the graph (ms), from the backend. */
+  runtime_ms?: number | null;
 }
 
 /** GET /conversations row (backend snake_case). */
@@ -132,4 +134,6 @@ export interface ApiChatTurnResponse {
   executed_steps: AnalyzeExecutedStep[];
   errors: AnalyzeErrorItem[];
   inspection_id: string | null;
+  /** Omitted on very old clients; use null when absent. */
+  runtime_ms?: number | null;
 }

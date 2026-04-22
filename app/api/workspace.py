@@ -78,7 +78,7 @@ def _build_inspection(inspection_id: str, prompt: str, response: AnalyzeResponse
         and len(response.errors) == 0
         and any(step.status == "success" for step in executed_steps)
     )
-    runtime_ms = None
+    runtime_ms = response.runtime_ms
 
     return InspectionData(
         id=inspection_id,

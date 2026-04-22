@@ -96,6 +96,7 @@ def test_analyze_endpoint_structure(client: TestClient) -> None:
                 }
             ],
             "errors": [],
+            "runtime_ms": 7,
         }
 
     app.dependency_overrides = {}
@@ -121,11 +122,12 @@ def test_analyze_endpoint_structure(client: TestClient) -> None:
         analysis_run.run_analysis = original
     assert response.status_code == 200
     payload = response.json()
-    assert {"analysis", "trace", "executed_steps", "errors", "inspection_id"} <= payload.keys()
+    assert {"analysis", "trace", "executed_steps", "errors", "inspection_id", "runtime_ms"} <= payload.keys()
     assert isinstance(payload["trace"], list)
     assert isinstance(payload["executed_steps"], list)
     assert isinstance(payload["analysis"], str)
     assert isinstance(payload["inspection_id"], str)
+    assert payload["runtime_ms"] == 7
 
 
 def test_analyze_endpoint_returns_http_500_on_failure(client: TestClient) -> None:
