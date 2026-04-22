@@ -29,11 +29,14 @@ def run_stored_analysis(query: str, source_ids: list[str] | None = None) -> Stor
     """Run `run_analysis`, persist inspection to process memory, return API + inspection objects."""
 
     state = run_analysis(query, source_ids=source_ids)
+    raw_ms = state.get("runtime_ms")
+    runtime_ms: int | None = int(raw_ms) if raw_ms is not None else None
     base = AnalyzeResponse(
         analysis=state["analysis"],
         trace=state.get("trace", []),
         executed_steps=state.get("executed_steps", []),
         errors=state.get("errors", []),
+        runtime_ms=runtime_ms,
     )
     inspection_id, inspection = store_inspection(query, base)
     response = AnalyzeResponse(
@@ -42,5 +45,6 @@ def run_stored_analysis(query: str, source_ids: list[str] | None = None) -> Stor
         executed_steps=base.executed_steps,
         errors=base.errors,
         inspection_id=inspection_id,
+        runtime_ms=base.runtime_ms,
     )
     return StoredAnalysisRun(response=response, inspection=inspection)

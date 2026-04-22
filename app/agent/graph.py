@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -41,7 +42,14 @@ def run_analysis(query: str, source_ids: list[str] | None = None) -> dict[str, A
     """Compatibility entrypoint used by the API service layer."""
 
     workflow = build_graph()
-    return workflow.invoke(create_initial_state(query, source_ids=source_ids))
+    started = time.perf_counter()
+    result = workflow.invoke(create_initial_state(query, source_ids=source_ids))
+    if not isinstance(result, dict):
+        result = dict(result)
+    else:
+        result = dict(result)
+    result["runtime_ms"] = max(0, int((time.perf_counter() - started) * 1000))
+    return result
 
 
 def load_schema_context_node(state: dict[str, Any]) -> dict[str, Any]:

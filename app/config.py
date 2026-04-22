@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
     gemini_model: str = "gemini-2.0-flash"
+    # Free-tier limits are often 5 RPM; set to 0 to disable throttling (e.g. paid / higher limits).
+    gemini_max_requests_per_minute: int = Field(
+        default=5,
+        alias="GEMINI_MAX_REQUESTS_PER_MINUTE",
+    )
+    gemini_rate_limit_window_seconds: float = Field(
+        default=60.0,
+        alias="GEMINI_RATE_LIMIT_WINDOW_SECONDS",
+    )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = "gpt-4.1-mini"
     log_level: str = "INFO"

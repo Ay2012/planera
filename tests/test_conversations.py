@@ -36,6 +36,7 @@ def _fake_analysis_state(query: str, source_ids=None) -> dict:  # noqa: ARG001
         "trace": [{"step": "planner_compiled_node", "status": "completed", "details": {}}],
         "executed_steps": [],
         "errors": [],
+        "runtime_ms": 42,
     }
 
 
@@ -62,7 +63,9 @@ def test_chat_creates_conversation_on_first_prompt(chat_client: TestClient) -> N
     assert body["assistant_message"]["role"] == "assistant"
     assert body["assistant_message"]["content"] == "## Demo\nHello from fake analysis.\n"
     assert body["analysis"] == body["assistant_message"]["content"]
+    assert body["runtime_ms"] == 42
     assert body["assistant_message"]["metadata_json"]["inspection_id"] == body["inspection_id"]
+    assert body["assistant_message"]["metadata_json"]["runtime_ms"] == 42
 
     lst = chat_client.get("/conversations", headers={"Authorization": f"Bearer {token}"})
     assert lst.status_code == 200

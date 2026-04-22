@@ -62,7 +62,7 @@ function buildInspection(id: string, prompt: string, response: AnalyzeApiRespons
   const status = deriveInspectionStatus(response, executedSteps);
   const verified = status === "valid" && response.errors.length === 0 && executedSteps.some((step) => step.status === "success");
   const query = buildCodeBundle(executedSteps);
-  const runtimeMs = null;
+  const runtimeMs = response.runtime_ms ?? null;
 
   return {
     id,
